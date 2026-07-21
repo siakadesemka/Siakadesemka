@@ -103,7 +103,7 @@ const {
    Ganti API_URL dengan URL Web App hasil deploy Google Apps Script Anda.
    Contoh: https://script.google.com/macros/s/AKfycb..../exec
    ============================================================================ */
-const API_URL = "GANTI_DENGAN_URL_WEB_APP_ANDA";
+const API_URL = "https://script.google.com/macros/s/AKfycbzNIMNYTwC1W_qwRxzBi4rPZ9uANkoFosKg47YXTdCFTVCEamg569J46N5YdLhNIV5n0A/exec";
 async function apiCall(action, payload = {}) {
   if (API_URL.indexOf("GANTI_DENGAN") !== -1) {
     throw new Error("API_URL belum diatur. Silakan isi URL Web App Google Apps Script pada index.html.");
