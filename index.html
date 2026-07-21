@@ -103,7 +103,7 @@ const {
    Ganti API_URL dengan URL Web App hasil deploy Google Apps Script Anda.
    Contoh: https://script.google.com/macros/s/AKfycb..../exec
    ============================================================================ */
-const API_URL = "https://script.google.com/macros/s/AKfycbzNIMNYTwC1W_qwRxzBi4rPZ9uANkoFosKg47YXTdCFTVCEamg569J46N5YdLhNIV5n0A/exec";
+const API_URL = "GANTI_DENGAN_URL_WEB_APP_ANDA";
 async function apiCall(action, payload = {}) {
   if (API_URL.indexOf("GANTI_DENGAN") !== -1) {
     throw new Error("API_URL belum diatur. Silakan isi URL Web App Google Apps Script pada index.html.");
@@ -934,30 +934,43 @@ function GuruJurnalModule() {
     Materi: "",
     Catatan_Kelas: ""
   });
-  const [siswaKelas, setSiswaKelas] = useState([]);
-  const [kehadiran, setKehadiran] = useState({});
+  const [sudahAbsen, setSudahAbsen] = useState([]); // siswa yang sudah absen masuk pagi ini (gerbang QR)
+  const [belumAbsen, setBelumAbsen] = useState([]); // siswa yang belum absen masuk
+  const [dipilihHadir, setDipilihHadir] = useState({}); // ID_Siswa -> true/false (dari grup sudah absen)
+  const [statusTidakHadir, setStatusTidakHadir] = useState({}); // ID_Siswa -> Sakit/Izin/Alfa (untuk yang di-uncheck ATAU belum absen)
   const [foto, setFoto] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingSiswa, setLoadingSiswa] = useState(false);
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState("");
-  async function loadSiswa(kelas) {
-    if (!kelas) {
-      setSiswaKelas([]);
+  async function loadStatusAbsen(kelas, tanggal) {
+    if (!kelas || !tanggal) {
+      setSudahAbsen([]);
+      setBelumAbsen([]);
       return;
     }
+    setLoadingSiswa(true);
     try {
-      const all = await apiCall("getMasterData", {
-        scope: "siswa"
+      const res = await apiCall("getStatusAbsenHarianKelas", {
+        Kelas: kelas,
+        Tanggal: tanggal
       });
-      const filtered = all.filter(s => (s.Kelas_Diampu || "") === kelas);
-      setSiswaKelas(filtered);
-      const initKehadiran = {};
-      filtered.forEach(s => {
-        initKehadiran[s.ID] = "Hadir";
-      });
-      setKehadiran(initKehadiran);
+      setSudahAbsen(res.sudahAbsen);
+      setBelumAbsen(res.belumAbsen);
+      const initHadir = {};
+      res.sudahAbsen.forEach(s => {
+        initHadir[s.ID_Siswa] = true;
+      }); // default: yang sudah absen dianggap hadir di kelas
+      setDipilihHadir(initHadir);
+      const initStatus = {};
+      res.belumAbsen.forEach(s => {
+        initStatus[s.ID_Siswa] = "Alfa";
+      }); // default siswa yang belum absen: Alfa
+      setStatusTidakHadir(initStatus);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoadingSiswa(false);
     }
   }
   function set(field, val) {
@@ -966,21 +979,35 @@ function GuruJurnalModule() {
       [field]: val
     }));
   }
+  function handleKelasChange(kelas) {
+    set("Kelas", kelas);
+    loadStatusAbsen(kelas, form.Tanggal);
+  }
+  function handleTanggalChange(tanggal) {
+    set("Tanggal", tanggal);
+    loadStatusAbsen(form.Kelas, tanggal);
+  }
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
     setMsg(null);
     setError("");
     try {
+      const kehadiranSudahAbsen = sudahAbsen.map(s => ({
+        ID_Siswa: s.ID_Siswa,
+        Nama_Siswa: s.Nama,
+        Status: dipilihHadir[s.ID_Siswa] ? "Hadir" : statusTidakHadir[s.ID_Siswa] || "Alfa"
+      }));
+      const kehadiranBelumAbsen = belumAbsen.map(s => ({
+        ID_Siswa: s.ID_Siswa,
+        Nama_Siswa: s.Nama,
+        Status: statusTidakHadir[s.ID_Siswa] || "Alfa"
+      }));
       const payload = {
         ...form,
         ID_Guru: user.ID,
         Nama_Guru: user.Nama,
-        Kehadiran_Siswa: siswaKelas.map(s => ({
-          ID_Siswa: s.ID,
-          Nama_Siswa: s.Nama,
-          Status: kehadiran[s.ID] || "Hadir"
-        })),
+        Kehadiran_Siswa: [...kehadiranSudahAbsen, ...kehadiranBelumAbsen],
         Foto_Base64: foto
       };
       await apiCall("saveJurnalMengajar", payload);
@@ -995,8 +1022,10 @@ function GuruJurnalModule() {
         Materi: "",
         Catatan_Kelas: ""
       });
-      setSiswaKelas([]);
-      setKehadiran({});
+      setSudahAbsen([]);
+      setBelumAbsen([]);
+      setDipilihHadir({});
+      setStatusTidakHadir({});
       setFoto(null);
     } catch (e2) {
       setError(e2.message);
@@ -1024,7 +1053,7 @@ function GuruJurnalModule() {
     label: "Tanggal",
     type: "date",
     value: form.Tanggal,
-    onChange: e => set("Tanggal", e.target.value),
+    onChange: e => handleTanggalChange(e.target.value),
     required: true
   }), /*#__PURE__*/React.createElement(Input, {
     label: "Jam Ke",
@@ -1035,10 +1064,7 @@ function GuruJurnalModule() {
   }), /*#__PURE__*/React.createElement(Select, {
     label: "Kelas",
     value: form.Kelas,
-    onChange: e => {
-      set("Kelas", e.target.value);
-      loadSiswa(e.target.value);
-    },
+    onChange: e => handleKelasChange(e.target.value),
     options: kelasOptions,
     required: true
   }), /*#__PURE__*/React.createElement(Select, {
@@ -1064,23 +1090,54 @@ function GuruJurnalModule() {
     rows: "2",
     value: form.Catatan_Kelas,
     onChange: e => set("Catatan_Kelas", e.target.value)
-  }), siswaKelas.length > 0 && /*#__PURE__*/React.createElement("div", {
-    className: "mb-3"
-  }, /*#__PURE__*/React.createElement("span", {
+  }), loadingSiswa && /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400 mb-3"
+  }, /*#__PURE__*/React.createElement(Spinner, null), " Memuat data absen masuk..."), !loadingSiswa && form.Kelas && /*#__PURE__*/React.createElement("div", {
+    className: "mb-3 space-y-3"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     className: "block text-sm font-medium text-gray-600 mb-1"
-  }, "Checklist Kehadiran Siswa"), /*#__PURE__*/React.createElement("div", {
+  }, "Siswa Sudah Absen Masuk Pagi Ini (", sudahAbsen.length, ") — centang yang hadir di kelas ini"), /*#__PURE__*/React.createElement("div", {
     className: "border rounded-lg divide-y max-h-60 overflow-y-auto"
-  }, siswaKelas.map(s => /*#__PURE__*/React.createElement("div", {
-    key: s.ID,
-    className: "flex items-center justify-between px-3 py-2 text-sm"
-  }, /*#__PURE__*/React.createElement("span", null, s.Nama), /*#__PURE__*/React.createElement("select", {
-    value: kehadiran[s.ID],
-    onChange: e => setKehadiran(k => ({
-      ...k,
-      [s.ID]: e.target.value
+  }, sudahAbsen.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.ID_Siswa,
+    className: "flex items-center justify-between px-3 py-2 text-sm gap-2"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "flex items-center gap-2 flex-1"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!dipilihHadir[s.ID_Siswa],
+    onChange: e => setDipilihHadir(d => ({
+      ...d,
+      [s.ID_Siswa]: e.target.checked
+    }))
+  }), /*#__PURE__*/React.createElement("span", null, s.Nama), /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-gray-400"
+  }, "masuk ", s.Jam_Masuk)), !dipilihHadir[s.ID_Siswa] && /*#__PURE__*/React.createElement("select", {
+    value: statusTidakHadir[s.ID_Siswa] || "Alfa",
+    onChange: e => setStatusTidakHadir(st => ({
+      ...st,
+      [s.ID_Siswa]: e.target.value
     })),
     className: "border rounded px-2 py-1 text-xs"
-  }, /*#__PURE__*/React.createElement("option", null, "Hadir"), /*#__PURE__*/React.createElement("option", null, "Sakit"), /*#__PURE__*/React.createElement("option", null, "Izin"), /*#__PURE__*/React.createElement("option", null, "Alfa")))))), /*#__PURE__*/React.createElement(CameraCapture, {
+  }, /*#__PURE__*/React.createElement("option", null, "Sakit"), /*#__PURE__*/React.createElement("option", null, "Izin"), /*#__PURE__*/React.createElement("option", null, "Alfa")))), sudahAbsen.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 text-center py-4"
+  }, "Belum ada siswa yang absen masuk hari ini."))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Siswa Belum Absen Masuk (", belumAbsen.length, ") — pilih keterangan"), /*#__PURE__*/React.createElement("div", {
+    className: "border rounded-lg divide-y max-h-60 overflow-y-auto"
+  }, belumAbsen.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.ID_Siswa,
+    className: "flex items-center justify-between px-3 py-2 text-sm"
+  }, /*#__PURE__*/React.createElement("span", null, s.Nama), /*#__PURE__*/React.createElement("select", {
+    value: statusTidakHadir[s.ID_Siswa] || "Alfa",
+    onChange: e => setStatusTidakHadir(st => ({
+      ...st,
+      [s.ID_Siswa]: e.target.value
+    })),
+    className: "border rounded px-2 py-1 text-xs"
+  }, /*#__PURE__*/React.createElement("option", null, "Sakit"), /*#__PURE__*/React.createElement("option", null, "Izin"), /*#__PURE__*/React.createElement("option", null, "Alfa")))), belumAbsen.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 text-center py-4"
+  }, "Semua siswa kelas ini sudah absen masuk.")))), /*#__PURE__*/React.createElement(CameraCapture, {
     onCapture: setFoto
   }), /*#__PURE__*/React.createElement(Button, {
     type: "submit",
