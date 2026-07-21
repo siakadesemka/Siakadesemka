@@ -1,0 +1,19 @@
+{
+  "name": "SIAKAD ESEMKASA - Sistem Informasi Akademik Sekolah",
+  "short_name": "SIAKAD ESEMKASA",
+  "description": "Sistem Informasi Akademik Sekolah multi-role: absensi guru & siswa, jurnal mengajar, jurnal PKL, jurnal karakter 7KAIH, dan dashboard monitoring.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F7F8FC",
+  "theme_color": "#241F5D",
+  "lang": "id",
+  "icons": [
+    { "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

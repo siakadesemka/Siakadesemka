@@ -1,0 +1,2863 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SIAKAD ESEMKASA - Sistem Informasi Akademik Sekolah</title>
+
+<!-- PWA: bisa dipasang (install) ke HP maupun Laptop -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#241F5D" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="SIAKAD ESEMKASA" />
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+
+<!-- Tailwind CSS (CDN, palet warna elegan: navy indigo, emerald, emas) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: {
+            DEFAULT: '#312E81',
+            50: '#EEF0FB', 100: '#D9DAF5', 200: '#B7B8EB', 500: '#3F3B9E', 600: '#312E81', 700: '#241F5D', 900: '#1B1749'
+          },
+          secondary: {
+            DEFAULT: '#0E9F6E',
+            50: '#E6F9F1', 100: '#C6F1DE', 600: '#0B8058'
+          },
+          accent: {
+            DEFAULT: '#C9962C',
+            50: '#FBF3E1', 100: '#F3E1B6', 600: '#A97B1F'
+          },
+          bgapp: '#F7F8FC'
+        }
+      }
+    }
+  }
+</script>
+
+<!-- React + ReactDOM (UMD, versi dikunci agar tidak berubah sendiri di kemudian hari) -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+
+<!-- Library scan QR Code (kamera) & generator QR Code (kartu QR pribadi siswa), versi dikunci -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+<!--
+  CATATAN: Kode React di bawah ini SUDAH DIKOMPILASI (JSX -> JavaScript biasa)
+  sebelumnya, jadi halaman ini TIDAK butuh Babel di browser lagi. Ini sengaja
+  dilakukan supaya aplikasi tidak bergantung pada file @babel/standalone di
+  CDN yang versinya bisa berubah sewaktu-waktu tanpa pemberitahuan (ini
+  penyebab error "import declarations may only appear at top level of a
+  module" yang muncul sebelumnya). Jika Anda ingin mengubah source JSX,
+  edit file app.jsx lalu compile ulang menjadi app.compiled.js dan tempel
+  hasilnya di sini.
+-->
+
+<style>
+  body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#F9FAFB; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #C7D2FE; border-radius: 8px; }
+
+  /* ============================================================
+     CSS KHUSUS CETAK (@media print)
+     Menyembunyikan navigasi & tombol, merapikan dokumen untuk
+     dicetak fisik atau disimpan sebagai PDF.
+     ============================================================ */
+  @media print {
+    body * { visibility: hidden; }
+    #print-area, #print-area * { visibility: visible; }
+    #print-area {
+      position: absolute; left: 0; top: 0; width: 100%;
+      padding: 12mm; font-size: 12pt; color: #000;
+    }
+    .no-print { display: none !important; }
+    #print-area table { width: 100%; border-collapse: collapse; }
+    #print-area th, #print-area td { border: 1px solid #000; padding: 4px 6px; font-size: 10pt; }
+    #print-area h1, #print-area h2, #print-area h3 { color: #000 !important; }
+    .print-signature { margin-top: 40px; display: flex; justify-content: space-between; }
+    @page { size: A4; margin: 10mm; }
+  }
+</style>
+</head>
+<body class="bg-bgapp text-gray-800">
+<div id="root"></div>
+
+<script>
+const {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  createContext,
+  useMemo
+} = React;
+
+/* ============================================================================
+   KONFIGURASI API
+   Ganti API_URL dengan URL Web App hasil deploy Google Apps Script Anda.
+   Contoh: https://script.google.com/macros/s/AKfycb..../exec
+   ============================================================================ */
+const API_URL = "https://script.google.com/macros/s/AKfycbzNIMNYTwC1W_qwRxzBi4rPZ9uANkoFosKg47YXTdCFTVCEamg569J46N5YdLhNIV5n0A/exec";
+async function apiCall(action, payload = {}) {
+  if (API_URL.indexOf("GANTI_DENGAN") !== -1) {
+    throw new Error("API_URL belum diatur. Silakan isi URL Web App Google Apps Script pada index.html.");
+  }
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    // hindari preflight CORS di GAS
+    body: JSON.stringify({
+      action,
+      payload
+    })
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "Terjadi kesalahan pada server.");
+  return json.data;
+}
+
+/* ============================================================================
+   UTIL UMUM
+   ============================================================================ */
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function classNames(...arr) {
+  return arr.filter(Boolean).join(" ");
+}
+
+// Ambil koordinat GPS pengguna via Geolocation API
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation tidak didukung perangkat ini."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(pos => resolve({
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude
+    }), err => reject(new Error("Gagal mengambil lokasi: " + err.message)), {
+      enableHighAccuracy: true,
+      timeout: 10000
+    });
+  });
+}
+
+/* ============================================================================
+   KOMPONEN UI DASAR (dipakai ulang di semua modul)
+   ============================================================================ */
+function Button({
+  children,
+  variant = "primary",
+  className = "",
+  ...props
+}) {
+  const styles = {
+    primary: "bg-primary text-white hover:bg-primary-600",
+    secondary: "bg-secondary text-white hover:bg-secondary-600",
+    accent: "bg-accent text-white hover:bg-accent-600",
+    outline: "border border-gray-300 text-gray-700 hover:bg-gray-50",
+    danger: "bg-red-600 text-white hover:bg-red-700"
+  };
+  return /*#__PURE__*/React.createElement("button", {
+    className: classNames("px-4 py-2 rounded-lg font-medium text-sm transition disabled:opacity-50 disabled:cursor-not-allowed", styles[variant], className),
+    ...props
+  }, children);
+}
+function Card({
+  title,
+  subtitle,
+  children,
+  className = "",
+  actions
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: classNames("bg-white rounded-xl shadow-sm border border-gray-100 p-5", className)
+  }, (title || actions) && /*#__PURE__*/React.createElement("div", {
+    className: "flex items-start justify-between mb-4"
+  }, /*#__PURE__*/React.createElement("div", null, title && /*#__PURE__*/React.createElement("h3", {
+    className: "font-semibold text-gray-800"
+  }, title), subtitle && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-500 mt-0.5"
+  }, subtitle)), actions), children);
+}
+function Input({
+  label,
+  className = "",
+  ...props
+}) {
+  return /*#__PURE__*/React.createElement("label", {
+    className: "block mb-3"
+  }, label && /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, label), /*#__PURE__*/React.createElement("input", {
+    className: classNames("w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary", className),
+    ...props
+  }));
+}
+function Textarea({
+  label,
+  className = "",
+  ...props
+}) {
+  return /*#__PURE__*/React.createElement("label", {
+    className: "block mb-3"
+  }, label && /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, label), /*#__PURE__*/React.createElement("textarea", {
+    className: classNames("w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary", className),
+    ...props
+  }));
+}
+function Select({
+  label,
+  options = [],
+  className = "",
+  ...props
+}) {
+  return /*#__PURE__*/React.createElement("label", {
+    className: "block mb-3"
+  }, label && /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, label), /*#__PURE__*/React.createElement("select", {
+    className: classNames("w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary", className),
+    ...props
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Pilih --"), options.map(o => typeof o === "string" ? /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o) : /*#__PURE__*/React.createElement("option", {
+    key: o.value,
+    value: o.value
+  }, o.label))));
+}
+function Badge({
+  children,
+  color = "gray"
+}) {
+  const colors = {
+    gray: "bg-gray-100 text-gray-700",
+    green: "bg-emerald-100 text-emerald-700",
+    red: "bg-red-100 text-red-700",
+    amber: "bg-amber-100 text-amber-700",
+    indigo: "bg-indigo-100 text-indigo-700"
+  };
+  return /*#__PURE__*/React.createElement("span", {
+    className: classNames("px-2 py-0.5 rounded-full text-xs font-medium", colors[color])
+  }, children);
+}
+function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide
+}) {
+  if (!open) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: classNames("bg-white rounded-xl shadow-xl w-full max-h-[90vh] overflow-y-auto", wide ? "max-w-3xl" : "max-w-md")
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between px-5 py-4 border-b"
+  }, /*#__PURE__*/React.createElement("h3", {
+    className: "font-semibold"
+  }, title), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    className: "text-gray-400 hover:text-gray-700"
+  }, "✕")), /*#__PURE__*/React.createElement("div", {
+    className: "p-5"
+  }, children)));
+}
+function Spinner() {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full inline-block"
+  });
+}
+function Alert({
+  type = "error",
+  children
+}) {
+  const styles = {
+    error: "bg-red-50 text-red-700 border-red-200",
+    success: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    info: "bg-indigo-50 text-indigo-700 border-indigo-200"
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: classNames("border rounded-lg px-4 py-2 text-sm mb-3", styles[type])
+  }, children);
+}
+
+// Tombol cetak generik: menampilkan #print-area lalu memicu window.print()
+function PrintButton({
+  label = "Cetak",
+  onBeforePrint,
+  landscape
+}) {
+  function handleClick() {
+    if (onBeforePrint) onBeforePrint();
+    let styleTag = null;
+    if (landscape) {
+      styleTag = document.createElement("style");
+      styleTag.id = "temp-landscape-style";
+      styleTag.innerHTML = "@page { size: A4 landscape; margin: 8mm; }";
+      document.head.appendChild(styleTag);
+    }
+    setTimeout(() => {
+      window.print();
+      if (styleTag) styleTag.remove();
+    }, 80);
+  }
+  return /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    className: "no-print",
+    onClick: handleClick
+  }, "🖨️ ", label);
+}
+
+// Lambang / logo resmi SMK Negeri 1 Woyla - SIAKAD ESEMKASA (dipakai di login, sidebar, & PWA)
+function LogoMark({
+  size = 40
+}) {
+  return /*#__PURE__*/React.createElement("img", {
+    src: "icons/icon-192.png",
+    alt: "Logo SMK Negeri 1 Woyla",
+    style: {
+      width: size,
+      height: size,
+      objectFit: "contain"
+    }
+  });
+}
+
+// Kartu QR pribadi siswa - dipindai oleh akun Guru setiap masuk/pulang
+function MyQrCode({
+  token,
+  size = 180
+}) {
+  const boxRef = useRef(null);
+  useEffect(() => {
+    if (boxRef.current && window.QRCode && token) {
+      boxRef.current.innerHTML = "";
+      new window.QRCode(boxRef.current, {
+        text: token,
+        width: size,
+        height: size,
+        colorDark: "#241F5D",
+        colorLight: "#ffffff"
+      });
+    }
+  }, [token]);
+  return /*#__PURE__*/React.createElement("div", {
+    ref: boxRef,
+    className: "inline-block p-3 bg-white rounded-xl border"
+  });
+}
+
+// Kamera native untuk dokumentasi foto (getUserMedia)
+function CameraCapture({
+  onCapture
+}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [streaming, setStreaming] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const [error, setError] = useState("");
+  async function startCamera() {
+    try {
+      setError("");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment"
+        }
+      });
+      videoRef.current.srcObject = stream;
+      videoRef.current.play();
+      setStreaming(true);
+    } catch (e) {
+      setError("Tidak bisa mengakses kamera: " + e.message);
+    }
+  }
+  function takePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+    setPhoto(dataUrl);
+    onCapture(dataUrl);
+    video.srcObject.getTracks().forEach(t => t.stop());
+    setStreaming(false);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mb-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Dokumentasi Foto"), error && /*#__PURE__*/React.createElement(Alert, null, error), !photo && /*#__PURE__*/React.createElement("div", {
+    className: "border border-dashed border-gray-300 rounded-lg p-3 text-center"
+  }, /*#__PURE__*/React.createElement("video", {
+    ref: videoRef,
+    className: classNames("w-full rounded-lg mb-2", !streaming && "hidden"),
+    muted: true,
+    playsInline: true
+  }), !streaming ? /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    type: "button",
+    onClick: startCamera
+  }, "📷 Buka Kamera") : /*#__PURE__*/React.createElement(Button, {
+    variant: "accent",
+    type: "button",
+    onClick: takePhoto
+  }, "Jepret Foto")), photo && /*#__PURE__*/React.createElement("div", {
+    className: "relative inline-block"
+  }, /*#__PURE__*/React.createElement("img", {
+    src: photo,
+    className: "w-40 rounded-lg border"
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setPhoto(null),
+    className: "absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 text-xs"
+  }, "✕")), /*#__PURE__*/React.createElement("canvas", {
+    ref: canvasRef,
+    className: "hidden"
+  }));
+}
+
+/* ============================================================================
+   AUTH CONTEXT
+   ============================================================================ */
+const AuthContext = createContext(null);
+function useAuth() {
+  return useContext(AuthContext);
+}
+function AuthProvider({
+  children
+}) {
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sim_user") || "null");
+    } catch (e) {
+      return null;
+    }
+  });
+  const [activeRole, setActiveRole] = useState(() => localStorage.getItem("sim_active_role") || null);
+  function login(userData) {
+    setUser(userData);
+    localStorage.setItem("sim_user", JSON.stringify(userData));
+    const firstRole = (userData.Roles || [])[0];
+    setActiveRole(firstRole);
+    localStorage.setItem("sim_active_role", firstRole);
+  }
+  function logout() {
+    setUser(null);
+    setActiveRole(null);
+    localStorage.removeItem("sim_user");
+    localStorage.removeItem("sim_active_role");
+  }
+  function switchRole(role) {
+    setActiveRole(role);
+    localStorage.setItem("sim_active_role", role);
+  }
+  return /*#__PURE__*/React.createElement(AuthContext.Provider, {
+    value: {
+      user,
+      activeRole,
+      login,
+      logout,
+      switchRole
+    }
+  }, children);
+}
+
+/* ============================================================================
+   HALAMAN LOGIN
+   ============================================================================ */
+function LoginPage() {
+  const {
+    login
+  } = useAuth();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const data = await apiCall("login", {
+        username,
+        password
+      });
+      login(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-900 via-primary-700 to-primary-900 px-4 relative overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute inset-0 opacity-10 pointer-events-none",
+    style: {
+      backgroundImage: "radial-gradient(circle at 20% 20%, #C9962C 0, transparent 35%), radial-gradient(circle at 80% 80%, #0E9F6E 0, transparent 35%)"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "bg-white shadow-2xl rounded-2xl p-8 w-full max-w-sm relative"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-center mb-6"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "mx-auto mb-3 flex items-center justify-center"
+  }, /*#__PURE__*/React.createElement(LogoMark, {
+    size: 64
+  })), /*#__PURE__*/React.createElement("h1", {
+    className: "text-xl font-bold text-gray-800 tracking-wide"
+  }, "SIAKAD ESEMKASA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mt-0.5"
+  }, "Sistem Informasi Akademik Sekolah"), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-500 mt-2"
+  }, "Masuk untuk melanjutkan")), error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("form", {
+    onSubmit: handleSubmit
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Username (NIP / NISN)",
+    value: username,
+    onChange: e => setUsername(e.target.value),
+    required: true,
+    autoFocus: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Password",
+    type: "password",
+    value: password,
+    onChange: e => setPassword(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit",
+    className: "w-full mt-2",
+    disabled: loading
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Masuk"))), /*#__PURE__*/React.createElement("p", {
+    className: "absolute bottom-4 text-xs text-primary-100/70 no-print"
+  }, "SIAKAD ESEMKASA · dapat dipasang sebagai aplikasi di HP/Laptop"));
+}
+
+/* ============================================================================
+   MENU PER ROLE
+   ============================================================================ */
+const ROLE_MENU = {
+  "Admin": [{
+    key: "admin",
+    label: "Manajemen Data Induk",
+    icon: "🗄️"
+  }],
+  "Guru": [{
+    key: "guru_home",
+    label: "Beranda Guru",
+    icon: "🏠"
+  }, {
+    key: "guru_absen",
+    label: "Absensi Guru",
+    icon: "📍"
+  }, {
+    key: "guru_jurnal",
+    label: "Jurnal Mengajar",
+    icon: "📝"
+  }, {
+    key: "guru_riwayat",
+    label: "Riwayat & Cetak Jurnal",
+    icon: "🖨️"
+  }, {
+    key: "guru_scan_siswa",
+    label: "Scan Absensi Siswa",
+    icon: "📷"
+  }],
+  "Wali Kelas": [{
+    key: "wali_dashboard",
+    label: "Dashboard Wali Kelas",
+    icon: "📊"
+  }, {
+    key: "wali_bimbingan",
+    label: "Jurnal Bimbingan",
+    icon: "💬"
+  }],
+  "Guru Wali": [{
+    key: "wali_bimbingan",
+    label: "Jurnal Bimbingan",
+    icon: "💬"
+  }],
+  "Tata Usaha": [{
+    key: "guru_absen",
+    label: "Absensi Pegawai",
+    icon: "📍"
+  }],
+  "Siswa": [{
+    key: "siswa_home",
+    label: "Beranda Siswa",
+    icon: "🏠"
+  }, {
+    key: "siswa_absen",
+    label: "Absen (Scan QR)",
+    icon: "📷"
+  }, {
+    key: "siswa_kaih",
+    label: "Jurnal 7KAIH",
+    icon: "🌱"
+  }],
+  "Siswa PKL": [{
+    key: "pkl_home",
+    label: "Beranda PKL",
+    icon: "🏢"
+  }, {
+    key: "pkl_jurnal",
+    label: "Jurnal Harian PKL",
+    icon: "📓"
+  }, {
+    key: "siswa_kaih",
+    label: "Jurnal 7KAIH",
+    icon: "🌱"
+  }],
+  "Kepala Sekolah": [{
+    key: "manajemen",
+    label: "Dashboard Eksekutif",
+    icon: "📈"
+  }, {
+    key: "guru_absen",
+    label: "Absensi Saya",
+    icon: "📍"
+  }],
+  "Waka Kurikulum": [{
+    key: "manajemen",
+    label: "Dashboard Eksekutif",
+    icon: "📈"
+  }],
+  "Waka Hubmi": [{
+    key: "manajemen",
+    label: "Dashboard Eksekutif",
+    icon: "📈"
+  }, {
+    key: "waka_hubmi_pkl",
+    label: "Data Siswa PKL",
+    icon: "🏢"
+  }]
+};
+
+// Deteksi apakah siswa termasuk kelas XII (PKL) berdasarkan Kelas_Diampu
+function resolveEffectiveRoles(user) {
+  const roles = [...(user.Roles || [])];
+  if (roles.includes("Siswa") && user.Kelas_Diampu && String(user.Kelas_Diampu).indexOf("XII") !== -1) {
+    roles.push("Siswa PKL");
+  }
+  return roles;
+}
+function getMenuForRole(role) {
+  return ROLE_MENU[role] || [];
+}
+
+/* ============================================================================
+   LAYOUT UTAMA (SIDEBAR + TOPBAR)
+   ============================================================================ */
+// Jam berjalan (format Jam:Menit:Detik), tampil di header setelah login untuk semua role
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const jam = String(now.getHours()).padStart(2, "0");
+  const menit = String(now.getMinutes()).padStart(2, "0");
+  const detik = String(now.getSeconds()).padStart(2, "0");
+  const tanggal = now.toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric"
+  });
+  return /*#__PURE__*/React.createElement("div", {
+    className: "text-right no-print"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-lg font-semibold tabular-nums tracking-wide text-primary-700"
+  }, jam, ":", menit, ":", detik), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400"
+  }, tanggal));
+}
+function AppShell() {
+  const {
+    user,
+    activeRole,
+    logout,
+    switchRole
+  } = useAuth();
+  const effectiveRoles = useMemo(() => resolveEffectiveRoles(user), [user]);
+  const menu = getMenuForRole(activeRole);
+  const [page, setPage] = useState(menu[0]?.key || "");
+  const [history, setHistory] = useState([]);
+  useEffect(() => {
+    const m = getMenuForRole(activeRole);
+    setPage(m[0]?.key || "");
+    setHistory([]);
+  }, [activeRole]);
+  function navigateTo(key) {
+    if (key === page) return;
+    setHistory(h => [...h, page]);
+    setPage(key);
+  }
+  function goBack() {
+    setHistory(h => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setPage(prev);
+      return h.slice(0, -1);
+    });
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "min-h-screen flex"
+  }, /*#__PURE__*/React.createElement("aside", {
+    className: "w-64 bg-primary-900 text-primary-50 flex flex-col no-print"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "p-5 border-b border-white/10 flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(LogoMark, {
+    size: 36
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-semibold text-sm leading-tight tracking-wide"
+  }, "SIAKAD ESEMKASA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-primary-200"
+  }, activeRole))), /*#__PURE__*/React.createElement("nav", {
+    className: "flex-1 p-3 space-y-1 overflow-y-auto"
+  }, menu.map(m => /*#__PURE__*/React.createElement("button", {
+    key: m.key,
+    onClick: () => navigateTo(m.key),
+    className: classNames("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition", page === m.key ? "bg-accent text-primary-900 font-medium shadow" : "text-primary-100 hover:bg-white/10")
+  }, /*#__PURE__*/React.createElement("span", null, m.icon), m.label))), /*#__PURE__*/React.createElement("div", {
+    className: "p-3 border-t border-white/10"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "w-full !text-primary-50 !border-white/30 hover:!bg-white/10",
+    onClick: logout
+  }, "Keluar"))), /*#__PURE__*/React.createElement("main", {
+    className: "flex-1 flex flex-col"
+  }, /*#__PURE__*/React.createElement("header", {
+    className: "bg-white border-b px-6 py-3 flex items-center justify-between no-print"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-3"
+  }, history.length > 0 && /*#__PURE__*/React.createElement("button", {
+    onClick: goBack,
+    className: "px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+  }, "← Kembali"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400"
+  }, "Selamat datang,"), /*#__PURE__*/React.createElement("p", {
+    className: "font-semibold"
+  }, user.Nama))), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-4"
+  }, effectiveRoles.length > 1 && /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-gray-400"
+  }, "Beralih Dashboard:"), /*#__PURE__*/React.createElement("select", {
+    value: activeRole,
+    onChange: e => switchRole(e.target.value),
+    className: "border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+  }, effectiveRoles.map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  }, r)))), /*#__PURE__*/React.createElement(LiveClock, null))), /*#__PURE__*/React.createElement("div", {
+    className: "p-6 flex-1 overflow-y-auto"
+  }, /*#__PURE__*/React.createElement(PageRouter, {
+    page: page
+  }))));
+}
+function PageRouter({
+  page
+}) {
+  const pages = {
+    admin: AdminModule,
+    guru_home: GuruHomeModule,
+    guru_absen: GuruAbsenModule,
+    guru_jurnal: GuruJurnalModule,
+    guru_riwayat: GuruRiwayatModule,
+    guru_scan_siswa: GuruScanSiswaModule,
+    wali_dashboard: WaliKelasModule,
+    wali_bimbingan: JurnalBimbinganModule,
+    siswa_home: SiswaHomeModule,
+    siswa_absen: SiswaAbsenQrModule,
+    siswa_kaih: Jurnal7KaihModule,
+    pkl_home: SiswaPklHomeModule,
+    pkl_jurnal: SiswaPklJurnalModule,
+    manajemen: ManajemenModule,
+    waka_hubmi_pkl: WakaHubmiPklModule
+  };
+  const Comp = pages[page];
+  return Comp ? /*#__PURE__*/React.createElement(Comp, null) : /*#__PURE__*/React.createElement(Card, null, "Halaman tidak ditemukan.");
+}
+
+/* ============================================================================
+   MODUL GURU
+   ============================================================================ */
+function GuruHomeModule() {
+  const {
+    user
+  } = useAuth();
+  const mapel = (user.Mapel_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const kelas = (user.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const roster = safeParseJsonClient(user.Roster_Mengajar_JSON);
+  const urutanHari = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+  const rosterSorted = [...roster].sort((a, b) => urutanHari.indexOf(a.Hari) - urutanHari.indexOf(b.Hari) || Number(a.JamKe) - Number(b.JamKe));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Mata Pelajaran yang Diampu"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2"
+  }, mapel.length ? mapel.map(m => /*#__PURE__*/React.createElement(Badge, {
+    key: m,
+    color: "indigo"
+  }, m)) : /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400"
+  }, "Belum diatur."))), /*#__PURE__*/React.createElement(Card, {
+    title: "Kelas yang Diampu"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2"
+  }, kelas.length ? kelas.map(k => /*#__PURE__*/React.createElement(Badge, {
+    key: k,
+    color: "green"
+  }, k)) : /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400"
+  }, "Belum diatur."))), /*#__PURE__*/React.createElement(Card, {
+    title: "Roster Mengajar",
+    className: "md:col-span-2"
+  }, rosterSorted.length ? /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Hari"), /*#__PURE__*/React.createElement("th", null, "Jam Ke"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Mapel"))), /*#__PURE__*/React.createElement("tbody", null, rosterSorted.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+    key: i,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, r.Hari), /*#__PURE__*/React.createElement("td", null, r.JamKe), /*#__PURE__*/React.createElement("td", null, r.Kelas), /*#__PURE__*/React.createElement("td", null, r.Mapel))))) : /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400"
+  }, "Roster mengajar belum diatur oleh Admin.")));
+}
+function safeParseJsonClient(str) {
+  try {
+    return JSON.parse(str) || [];
+  } catch (e) {
+    return [];
+  }
+}
+function GuruAbsenModule() {
+  const {
+    user
+  } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const isJumat = now.getDay() === 5; // 0=Minggu ... 5=Jumat
+  const batasMasukLabel = isJumat ? "11:00" : "12:00";
+  const menitSekarang = now.getHours() * 60 + now.getMinutes();
+  const batasMasukMenit = isJumat ? 11 * 60 : 12 * 60;
+  const mulaiPulangMenit = 12 * 60;
+  const bisaAbsenMasuk = menitSekarang <= batasMasukMenit;
+  const bisaAbsenPulang = menitSekarang >= mulaiPulangMenit;
+  async function doAbsen(tipe) {
+    setLoading(true);
+    setMsg(null);
+    setError("");
+    try {
+      const pos = await getCurrentPosition();
+      const result = await apiCall("absenGuru", {
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama,
+        Lat: pos.lat,
+        Long: pos.lng,
+        tipe
+      });
+      if (tipe === "masuk" && result.telatMenit > 0) {
+        setMsg(result.status + " pukul " + result.jam + ". Anda Telat " + result.telatMenit + " Menit.");
+      } else {
+        setMsg(result.status + " pukul " + result.jam);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Absensi Guru / Pegawai",
+    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari sekolah. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul 12:00."
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-3 flex-wrap"
+  }, /*#__PURE__*/React.createElement(Button, {
+    onClick: () => doAbsen("masuk"),
+    disabled: loading || !bisaAbsenMasuk
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Absen Masuk"), /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => doAbsen("pulang"),
+    disabled: loading || !bisaAbsenPulang
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Absen Pulang")), !bisaAbsenMasuk && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-red-500 mt-2"
+  }, "Batas waktu absen masuk (pukul ", batasMasukLabel, ") sudah lewat untuk hari ini."), !bisaAbsenPulang && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mt-2"
+  }, "Absen pulang baru bisa dilakukan setelah pukul 12:00."), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mt-3"
+  }, "Jika Anda berada di luar radius sekolah, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah\"."));
+}
+function GuruJurnalModule() {
+  const {
+    user
+  } = useAuth();
+  const [form, setForm] = useState({
+    Hari: "",
+    Tanggal: todayStr(),
+    Kelas: "",
+    Mapel: "",
+    Jam_Ke: "",
+    Tujuan_Pembelajaran: "",
+    Materi: "",
+    Catatan_Kelas: ""
+  });
+  const [siswaKelas, setSiswaKelas] = useState([]);
+  const [kehadiran, setKehadiran] = useState({});
+  const [foto, setFoto] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState("");
+  async function loadSiswa(kelas) {
+    if (!kelas) {
+      setSiswaKelas([]);
+      return;
+    }
+    try {
+      const all = await apiCall("getMasterData", {
+        scope: "siswa"
+      });
+      const filtered = all.filter(s => (s.Kelas_Diampu || "") === kelas);
+      setSiswaKelas(filtered);
+      const initKehadiran = {};
+      filtered.forEach(s => {
+        initKehadiran[s.ID] = "Hadir";
+      });
+      setKehadiran(initKehadiran);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  function set(field, val) {
+    setForm(f => ({
+      ...f,
+      [field]: val
+    }));
+  }
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setMsg(null);
+    setError("");
+    try {
+      const payload = {
+        ...form,
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama,
+        Kehadiran_Siswa: siswaKelas.map(s => ({
+          ID_Siswa: s.ID,
+          Nama_Siswa: s.Nama,
+          Status: kehadiran[s.ID] || "Hadir"
+        })),
+        Foto_Base64: foto
+      };
+      await apiCall("saveJurnalMengajar", payload);
+      setMsg("Jurnal mengajar berhasil disimpan.");
+      setForm({
+        Hari: "",
+        Tanggal: todayStr(),
+        Kelas: "",
+        Mapel: "",
+        Jam_Ke: "",
+        Tujuan_Pembelajaran: "",
+        Materi: "",
+        Catatan_Kelas: ""
+      });
+      setSiswaKelas([]);
+      setKehadiran({});
+      setFoto(null);
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  const kelasOptions = (user.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const mapelOptions = (user.Mapel_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Form Jurnal Mengajar"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("form", {
+    onSubmit: handleSubmit
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-3 gap-3"
+  }, /*#__PURE__*/React.createElement(Select, {
+    label: "Hari",
+    value: form.Hari,
+    onChange: e => set("Hari", e.target.value),
+    options: ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"],
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal",
+    type: "date",
+    value: form.Tanggal,
+    onChange: e => set("Tanggal", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Jam Ke",
+    value: form.Jam_Ke,
+    onChange: e => set("Jam_Ke", e.target.value),
+    placeholder: "cth: 3-4",
+    required: true
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Kelas",
+    value: form.Kelas,
+    onChange: e => {
+      set("Kelas", e.target.value);
+      loadSiswa(e.target.value);
+    },
+    options: kelasOptions,
+    required: true
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Mata Pelajaran",
+    value: form.Mapel,
+    onChange: e => set("Mapel", e.target.value),
+    options: mapelOptions,
+    required: true
+  })), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Tujuan & Materi Pembelajaran",
+    rows: "2",
+    value: form.Tujuan_Pembelajaran,
+    onChange: e => set("Tujuan_Pembelajaran", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Materi",
+    rows: "2",
+    value: form.Materi,
+    onChange: e => set("Materi", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Catatan Kelas",
+    rows: "2",
+    value: form.Catatan_Kelas,
+    onChange: e => set("Catatan_Kelas", e.target.value)
+  }), siswaKelas.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "mb-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Checklist Kehadiran Siswa"), /*#__PURE__*/React.createElement("div", {
+    className: "border rounded-lg divide-y max-h-60 overflow-y-auto"
+  }, siswaKelas.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.ID,
+    className: "flex items-center justify-between px-3 py-2 text-sm"
+  }, /*#__PURE__*/React.createElement("span", null, s.Nama), /*#__PURE__*/React.createElement("select", {
+    value: kehadiran[s.ID],
+    onChange: e => setKehadiran(k => ({
+      ...k,
+      [s.ID]: e.target.value
+    })),
+    className: "border rounded px-2 py-1 text-xs"
+  }, /*#__PURE__*/React.createElement("option", null, "Hadir"), /*#__PURE__*/React.createElement("option", null, "Sakit"), /*#__PURE__*/React.createElement("option", null, "Izin"), /*#__PURE__*/React.createElement("option", null, "Alfa")))))), /*#__PURE__*/React.createElement(CameraCapture, {
+    onCapture: setFoto
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit",
+    disabled: loading
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Jurnal")));
+}
+function GuruRiwayatModule() {
+  const {
+    user
+  } = useAuth();
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(null);
+  useEffect(() => {
+    apiCall("getJurnalMengajarByGuru", {
+      ID_Guru: user.ID
+    }).then(setList).catch(e => setError(e.message));
+  }, []);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    title: "Riwayat Jurnal Mengajar"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Materi"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, list.map(j => /*#__PURE__*/React.createElement("tr", {
+    key: j.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, j.Tanggal), /*#__PURE__*/React.createElement("td", null, j.Kelas), /*#__PURE__*/React.createElement("td", null, j.Mapel), /*#__PURE__*/React.createElement("td", {
+    className: "max-w-xs truncate"
+  }, j.Materi), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setSelected(j)
+  }, "Cetak")))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "5",
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada jurnal.")))))), selected && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "fixed bottom-6 right-6 no-print z-40"
+  }, /*#__PURE__*/React.createElement(PrintButton, {
+    label: "Cetak Jurnal Ini"
+  }), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "ml-2",
+    onClick: () => setSelected(null)
+  }, "Tutup")), /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "hidden print:block bg-white p-6 mt-4 rounded-xl border"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "text-lg font-bold text-center"
+  }, "JURNAL MENGAJAR GURU"), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-4"
+  }, "Sekolah Menengah Kejuruan"), /*#__PURE__*/React.createElement("table", {
+    className: "text-sm mb-4"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Nama Guru"), /*#__PURE__*/React.createElement("td", null, ": ", selected.Nama_Guru)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Hari / Tanggal"), /*#__PURE__*/React.createElement("td", null, ": ", selected.Hari, ", ", selected.Tanggal)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Kelas / Mapel"), /*#__PURE__*/React.createElement("td", null, ": ", selected.Kelas, " / ", selected.Mapel)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Jam Ke"), /*#__PURE__*/React.createElement("td", null, ": ", selected.Jam_Ke)))), /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, "Tujuan & Materi Pembelajaran:"), /*#__PURE__*/React.createElement("p", {
+    className: "mb-3"
+  }, selected.Tujuan_Pembelajaran, " — ", selected.Materi), /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, "Catatan Kelas:"), /*#__PURE__*/React.createElement("p", {
+    className: "mb-3"
+  }, selected.Catatan_Kelas), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Status"))), /*#__PURE__*/React.createElement("tbody", null, (selected.Kehadiran_Siswa || []).map((k, i) => /*#__PURE__*/React.createElement("tr", {
+    key: k.ID_Siswa
+  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, k.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, k.Status))))), /*#__PURE__*/React.createElement("div", {
+    className: "print-signature"
+  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, selected.Tanggal, /*#__PURE__*/React.createElement("br", null), "Guru Mata Pelajaran", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), selected.Nama_Guru)))));
+}
+
+/* ============================================================================
+   MODUL WALI KELAS
+   ============================================================================ */
+function GuruScanSiswaModule() {
+  const {
+    user
+  } = useAuth();
+  const [tipe, setTipe] = useState("masuk");
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const scannerRef = useRef(null);
+  function startScan() {
+    setError("");
+    setResult(null);
+    setScanning(true);
+    setTimeout(() => {
+      const html5QrCode = new Html5Qrcode("qr-reader-guru");
+      scannerRef.current = html5QrCode;
+      html5QrCode.start({
+        facingMode: "environment"
+      }, {
+        fps: 10,
+        qrbox: 220
+      }, async decodedText => {
+        html5QrCode.stop();
+        setScanning(false);
+        try {
+          const res = await apiCall("absenHarianViaQr", {
+            QR_Token: decodedText,
+            ID_Guru: user.ID,
+            Nama_Guru: user.Nama,
+            tipe
+          });
+          setResult(res.status + " pukul " + res.jam);
+        } catch (e) {
+          setError(e.message);
+        }
+      }, () => {}).catch(e => setError("Gagal membuka kamera: " + e.message));
+    }, 100);
+  }
+  function stopScan() {
+    if (scannerRef.current) scannerRef.current.stop().catch(() => {});
+    setScanning(false);
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Scan Absensi Siswa (Gerbang)",
+    subtitle: "Arahkan kamera ke QR Code pribadi milik siswa untuk mencatat kehadiran masuk/pulang."
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), result && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, result), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 mb-3"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tipe === "masuk" ? "primary" : "outline",
+    onClick: () => setTipe("masuk")
+  }, "Absen Masuk"), /*#__PURE__*/React.createElement(Button, {
+    variant: tipe === "pulang" ? "primary" : "outline",
+    onClick: () => setTipe("pulang")
+  }, "Absen Pulang")), !scanning ? /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: startScan
+  }, "📷 Mulai Scan") : /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: stopScan
+  }, "Hentikan Scan"), /*#__PURE__*/React.createElement("div", {
+    id: "qr-reader-guru",
+    className: "mt-4 max-w-sm"
+  }));
+}
+function WaliKelasModule() {
+  const {
+    user
+  } = useAuth();
+  const kelasWali = (user.Kelas_Diampu || "").split(",")[0]?.trim() || "";
+  const [rekap, setRekap] = useState([]);
+  const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(todayStr());
+  const [error, setError] = useState("");
+  const [showPrint, setShowPrint] = useState(false);
+  async function load() {
+    try {
+      const data = await apiCall("getRekapKehadiranKelas", {
+        Kelas: kelasWali,
+        startDate,
+        endDate
+      });
+      setRekap(data);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  useEffect(() => {
+    if (kelasWali) load();
+  }, []);
+  const totalHadir = rekap.reduce((a, r) => a + r.Hadir, 0);
+  const totalHari = rekap.reduce((a, r) => a + r.Hadir + r.Sakit + r.Izin + r.Alfa, 0);
+  const persenHadir = totalHari ? Math.round(totalHadir / totalHari * 100) : 0;
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    title: "Dashboard Wali Kelas - " + kelasWali,
+    className: "mb-4"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-3 items-end mb-4 no-print"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Dari Tanggal",
+    type: "date",
+    value: startDate,
+    onChange: e => setStartDate(e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Sampai Tanggal",
+    type: "date",
+    value: endDate,
+    onChange: e => setEndDate(e.target.value)
+  }), /*#__PURE__*/React.createElement(Button, {
+    onClick: load
+  }, "Terapkan Filter"), /*#__PURE__*/React.createElement(PrintButton, {
+    label: "Cetak Rekap Kehadiran",
+    onBeforePrint: () => setShowPrint(true)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "mb-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex justify-between text-sm mb-1"
+  }, /*#__PURE__*/React.createElement("span", null, "Persentase Kehadiran Kelas"), /*#__PURE__*/React.createElement("span", {
+    className: "font-semibold"
+  }, persenHadir, "%")), /*#__PURE__*/React.createElement("div", {
+    className: "w-full bg-gray-100 rounded-full h-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-secondary h-3 rounded-full",
+    style: {
+      width: persenHadir + "%"
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.ID_Siswa,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "green"
+  }, r.Hadir)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "amber"
+  }, r.Sakit)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, r.Izin)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "red"
+  }, r.Alfa)))), rekap.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "5",
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada data.")))))), showPrint && /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "hidden print:block bg-white p-6 rounded-xl border"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "text-lg font-bold text-center"
+  }, "REKAP KEHADIRAN SISWA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-4"
+  }, "Kelas ", kelasWali, " · Periode ", startDate, " s.d. ", endDate), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+    key: r.ID_Siswa
+  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Hadir), /*#__PURE__*/React.createElement("td", null, r.Sakit), /*#__PURE__*/React.createElement("td", null, r.Izin), /*#__PURE__*/React.createElement("td", null, r.Alfa))))), /*#__PURE__*/React.createElement("div", {
+    className: "print-signature"
+  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, endDate, /*#__PURE__*/React.createElement("br", null), "Wali Kelas ", kelasWali, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), user.Nama))));
+}
+
+/* ============================================================================
+   MODUL JURNAL BIMBINGAN (11 ASPEK) - Guru Wali / Wali Kelas
+   ============================================================================ */
+const ASPEK_LAYANAN = ["Landasan Hidup Religius", "Perilaku Etis", "Kematangan Emosi", "Kematangan Intelektual", "Tanggung Jawab", "Kesadaran Gender", "Pengembangan Pribadi", "Kewirausahaan", "Kesiapan Karir", "Hubungan Teman Sebaya", "Kesiapan Berkeluarga"];
+function JurnalBimbinganModule() {
+  const {
+    user
+  } = useAuth();
+  const [siswaList, setSiswaList] = useState([]);
+  const [form, setForm] = useState({
+    ID_Siswa: "",
+    Tanggal: todayStr(),
+    Aspek_Layanan: "",
+    Kegiatan: ""
+  });
+  const [riwayat, setRiwayat] = useState([]);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    apiCall("getMasterData", {
+      scope: "siswa"
+    }).then(all => {
+      const kelasWali = (user.Kelas_Diampu || "").split(",")[0]?.trim();
+      setSiswaList(all.filter(s => s.Guru_Wali_Nama === user.Nama || kelasWali && s.Kelas_Diampu === kelasWali));
+    }).catch(e => setError(e.message));
+    apiCall("getJurnalBimbinganByGuru", {
+      ID_Guru: user.ID
+    }).then(setRiwayat).catch(() => {});
+  }, []);
+  function set(field, val) {
+    setForm(f => ({
+      ...f,
+      [field]: val
+    }));
+  }
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setMsg(null);
+    setError("");
+    try {
+      const siswa = siswaList.find(s => s.ID === form.ID_Siswa);
+      await apiCall("saveJurnalBimbingan", {
+        ...form,
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama,
+        Nama_Siswa: siswa?.Nama || ""
+      });
+      setMsg("Jurnal bimbingan tersimpan.");
+      setForm({
+        ID_Siswa: "",
+        Tanggal: todayStr(),
+        Aspek_Layanan: "",
+        Kegiatan: ""
+      });
+      apiCall("getJurnalBimbinganByGuru", {
+        ID_Guru: user.ID
+      }).then(setRiwayat);
+    } catch (e2) {
+      setError(e2.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Form Jurnal Bimbingan (11 Aspek Capaian Layanan)"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("form", {
+    onSubmit: handleSubmit
+  }, /*#__PURE__*/React.createElement(Select, {
+    label: "Nama Siswa",
+    value: form.ID_Siswa,
+    onChange: e => set("ID_Siswa", e.target.value),
+    options: siswaList.map(s => ({
+      value: s.ID,
+      label: s.Nama
+    })),
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal",
+    type: "date",
+    value: form.Tanggal,
+    onChange: e => set("Tanggal", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Aspek Capaian Layanan",
+    value: form.Aspek_Layanan,
+    onChange: e => set("Aspek_Layanan", e.target.value),
+    options: ASPEK_LAYANAN,
+    required: true
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Kegiatan yang Dilakukan",
+    rows: "3",
+    value: form.Kegiatan,
+    onChange: e => set("Kegiatan", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit"
+  }, "Simpan"))), /*#__PURE__*/React.createElement(Card, {
+    title: "Riwayat Jurnal Bimbingan"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "max-h-96 overflow-y-auto divide-y"
+  }, riwayat.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-2 text-sm"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, r.Nama_Siswa, " ", /*#__PURE__*/React.createElement("span", {
+    className: "text-gray-400 font-normal"
+  }, "· ", r.Tanggal)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, r.Aspek_Layanan)), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-600 mt-1"
+  }, r.Kegiatan))), riwayat.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada riwayat."))));
+}
+
+/* ============================================================================
+   MODUL SUPER ADMIN
+   ============================================================================ */
+function AdminModule() {
+  const [tab, setTab] = useState("guru");
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 mb-4 no-print"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "guru" ? "primary" : "outline",
+    onClick: () => setTab("guru")
+  }, "Data Guru & Pegawai"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "siswa" ? "primary" : "outline",
+    onClick: () => setTab("siswa")
+  }, "Data Siswa"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "libur" ? "primary" : "outline",
+    onClick: () => setTab("libur")
+  }, "Hari Libur"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "rekap_guru" ? "primary" : "outline",
+    onClick: () => setTab("rekap_guru")
+  }, "Cetak Rekap Absensi Guru"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "rekap_siswa" ? "primary" : "outline",
+    onClick: () => setTab("rekap_siswa")
+  }, "Cetak Rekap Absensi Siswa")), tab === "guru" && /*#__PURE__*/React.createElement(AdminGuruTab, null), tab === "siswa" && /*#__PURE__*/React.createElement(AdminSiswaTab, null), tab === "libur" && /*#__PURE__*/React.createElement(AdminHariLiburTab, null), tab === "rekap_guru" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
+    tipe: "guru"
+  }), tab === "rekap_siswa" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
+    tipe: "siswa"
+  }));
+}
+const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi"];
+const HARI_LIST = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const JAM_KE_LIST = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+function AdminGuruTab() {
+  const [list, setList] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState("");
+  function load() {
+    apiCall("getMasterData", {
+      scope: "all"
+    }).then(all => setList(all.filter(u => u.Roles.some(r => r !== "Siswa")))).catch(e => setError(e.message));
+  }
+  useEffect(load, []);
+  function openNew() {
+    setEditing({
+      Nama: "",
+      Identitas_NIP_NISN: "",
+      Password: "",
+      Mapel_Diampu: "",
+      Kelas_Diampu: "",
+      RosterList: [],
+      Roles: []
+    });
+    setModalOpen(true);
+  }
+  function openEdit(u) {
+    setEditing({
+      ...u,
+      RosterList: safeParseJsonClient(u.Roster_Mengajar_JSON)
+    });
+    setModalOpen(true);
+  }
+  async function save() {
+    try {
+      const payload = {
+        ...editing,
+        Roster_Mengajar_JSON: JSON.stringify(editing.RosterList || [])
+      };
+      delete payload.RosterList;
+      await apiCall("saveUser", payload);
+      setModalOpen(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function remove(id) {
+    if (!confirm("Hapus data ini?")) return;
+    try {
+      await apiCall("deleteUser", {
+        ID: id
+      });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  function toggleRole(role) {
+    setEditing(ed => {
+      const roles = ed.Roles.includes(role) ? ed.Roles.filter(r => r !== role) : [...ed.Roles, role];
+      return {
+        ...ed,
+        Roles: roles
+      };
+    });
+  }
+  function addRosterRow() {
+    setEditing(ed => ({
+      ...ed,
+      RosterList: [...(ed.RosterList || []), {
+        Hari: "Senin",
+        Kelas: "",
+        Mapel: "",
+        JamKe: "1"
+      }]
+    }));
+  }
+  function updateRosterRow(idx, field, value) {
+    setEditing(ed => {
+      const list2 = [...ed.RosterList];
+      list2[idx] = {
+        ...list2[idx],
+        [field]: value
+      };
+      return {
+        ...ed,
+        RosterList: list2
+      };
+    });
+  }
+  function removeRosterRow(idx) {
+    setEditing(ed => ({
+      ...ed,
+      RosterList: ed.RosterList.filter((_, i) => i !== idx)
+    }));
+  }
+  const kelasOptions = editing ? (editing.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean) : [];
+  const mapelOptions = editing ? (editing.Mapel_Diampu || "").split(",").map(s => s.trim()).filter(Boolean) : [];
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Manajemen Data Guru & Pegawai",
+    actions: /*#__PURE__*/React.createElement(Button, {
+      onClick: openNew
+    }, "+ Tambah")
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", null, "NIP"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Role"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, list.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Mapel_Diampu), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Roles.map(r => /*#__PURE__*/React.createElement(Badge, {
+    key: r,
+    color: "indigo"
+  }, r))), /*#__PURE__*/React.createElement("td", {
+    className: "space-x-1"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => openEdit(u)
+  }, "Edit"), /*#__PURE__*/React.createElement(Button, {
+    variant: "danger",
+    onClick: () => remove(u.ID)
+  }, "Hapus"))))))), /*#__PURE__*/React.createElement(Modal, {
+    open: modalOpen,
+    onClose: () => setModalOpen(false),
+    title: "Data Guru / Pegawai",
+    wide: true
+  }, editing && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Nama",
+    value: editing.Nama,
+    onChange: e => setEditing({
+      ...editing,
+      Nama: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "NIP / Username",
+    value: editing.Identitas_NIP_NISN,
+    onChange: e => setEditing({
+      ...editing,
+      Identitas_NIP_NISN: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Password",
+    value: editing.Password,
+    onChange: e => setEditing({
+      ...editing,
+      Password: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Mata Pelajaran (pisah koma)",
+    value: editing.Mapel_Diampu,
+    onChange: e => setEditing({
+      ...editing,
+      Mapel_Diampu: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Kelas Diampu (pisah koma)",
+    value: editing.Kelas_Diampu,
+    onChange: e => setEditing({
+      ...editing,
+      Kelas_Diampu: e.target.value
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-1"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600"
+  }, "Roster Mengajar (Hari, Kelas, Mapel, Jam Ke)"), /*#__PURE__*/React.createElement(Button, {
+    type: "button",
+    variant: "outline",
+    onClick: addRosterRow
+  }, "+ Tambah Jadwal")), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mb-2"
+  }, "Isi dahulu Mata Pelajaran & Kelas Diampu di atas agar pilihan tersedia di roster."), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2"
+  }, (editing.RosterList || []).map((r, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    className: "grid grid-cols-5 gap-2 items-center bg-gray-50 rounded-lg p-2"
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "border border-gray-300 rounded px-2 py-1.5 text-sm",
+    value: r.Hari,
+    onChange: e => updateRosterRow(idx, "Hari", e.target.value)
+  }, HARI_LIST.map(h => /*#__PURE__*/React.createElement("option", {
+    key: h,
+    value: h
+  }, h))), /*#__PURE__*/React.createElement("select", {
+    className: "border border-gray-300 rounded px-2 py-1.5 text-sm",
+    value: r.Kelas,
+    onChange: e => updateRosterRow(idx, "Kelas", e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Kelas"), kelasOptions.map(k => /*#__PURE__*/React.createElement("option", {
+    key: k,
+    value: k
+  }, k))), /*#__PURE__*/React.createElement("select", {
+    className: "border border-gray-300 rounded px-2 py-1.5 text-sm",
+    value: r.Mapel,
+    onChange: e => updateRosterRow(idx, "Mapel", e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Mapel"), mapelOptions.map(m => /*#__PURE__*/React.createElement("option", {
+    key: m,
+    value: m
+  }, m))), /*#__PURE__*/React.createElement("select", {
+    className: "border border-gray-300 rounded px-2 py-1.5 text-sm",
+    value: r.JamKe,
+    onChange: e => updateRosterRow(idx, "JamKe", e.target.value)
+  }, JAM_KE_LIST.map(j => /*#__PURE__*/React.createElement("option", {
+    key: j,
+    value: j
+  }, "Jam ke-", j))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => removeRosterRow(idx),
+    className: "text-red-500 text-xs hover:underline"
+  }, "Hapus"))), (!editing.RosterList || editing.RosterList.length === 0) && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400"
+  }, "Belum ada jadwal ditambahkan."))), /*#__PURE__*/React.createElement("div", {
+    className: "mt-4"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Role (bisa lebih dari satu)"), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2"
+  }, ALL_ROLES.map(r => /*#__PURE__*/React.createElement("button", {
+    key: r,
+    type: "button",
+    onClick: () => toggleRole(r),
+    className: classNames("px-3 py-1 rounded-full text-xs border", editing.Roles.includes(r) ? "bg-primary text-white border-primary" : "border-gray-300 text-gray-600")
+  }, r)))), /*#__PURE__*/React.createElement(Button, {
+    className: "mt-4",
+    onClick: save
+  }, "Simpan"))));
+}
+function AdminSiswaTab() {
+  const [list, setList] = useState([]);
+  const [guruList, setGuruList] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState("");
+  function load() {
+    apiCall("getMasterData", {
+      scope: "siswa"
+    }).then(setList).catch(e => setError(e.message));
+    apiCall("getMasterData", {
+      scope: "guru"
+    }).then(setGuruList).catch(() => {});
+  }
+  useEffect(load, []);
+  function openNew() {
+    setEditing({
+      Nama: "",
+      Identitas_NIP_NISN: "",
+      Password: "",
+      Kelas_Diampu: "",
+      Guru_Wali_Nama: "",
+      Guru_Pembimbing_PKL: "",
+      Pembimbing_Lapangan_PKL: "",
+      Tempat_PKL: "",
+      Lat_PKL: "",
+      Long_PKL: "",
+      Tanggal_Mulai_PKL: "",
+      Tanggal_Selesai_PKL: "",
+      Roles: ["Siswa"]
+    });
+    setModalOpen(true);
+  }
+  function openEdit(u) {
+    setEditing({
+      ...u
+    });
+    setModalOpen(true);
+  }
+  async function save() {
+    try {
+      await apiCall("saveUser", editing);
+      setModalOpen(false);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function remove(id) {
+    if (!confirm("Hapus data ini?")) return;
+    try {
+      await apiCall("deleteUser", {
+        ID: id
+      });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  const isXII = editing && String(editing.Kelas_Diampu || "").indexOf("XII") !== -1;
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Manajemen Data Siswa",
+    actions: /*#__PURE__*/React.createElement(Button, {
+      onClick: openNew
+    }, "+ Tambah Siswa")
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", null, "NISN"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Guru Wali"), /*#__PURE__*/React.createElement("th", null, "Guru Pembimbing PKL"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, list.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama), /*#__PURE__*/React.createElement("td", null, String(u.Kelas_Diampu || "").indexOf("XII") !== -1 ? u.Guru_Pembimbing_PKL || "-" : "-"), /*#__PURE__*/React.createElement("td", {
+    className: "space-x-1"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => openEdit(u)
+  }, "Edit"), /*#__PURE__*/React.createElement(Button, {
+    variant: "danger",
+    onClick: () => remove(u.ID)
+  }, "Hapus"))))))), /*#__PURE__*/React.createElement(Modal, {
+    open: modalOpen,
+    onClose: () => setModalOpen(false),
+    title: "Data Siswa",
+    wide: true
+  }, editing && /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Nama",
+    value: editing.Nama,
+    onChange: e => setEditing({
+      ...editing,
+      Nama: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "NISN / Username",
+    value: editing.Identitas_NIP_NISN,
+    onChange: e => setEditing({
+      ...editing,
+      Identitas_NIP_NISN: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Password",
+    value: editing.Password,
+    onChange: e => setEditing({
+      ...editing,
+      Password: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Kelas",
+    value: editing.Kelas_Diampu,
+    onChange: e => setEditing({
+      ...editing,
+      Kelas_Diampu: e.target.value
+    }),
+    placeholder: "cth: XII RPL 1"
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Guru Wali (bimbingan karakter, semua kelas)",
+    value: editing.Guru_Wali_Nama,
+    onChange: e => setEditing({
+      ...editing,
+      Guru_Wali_Nama: e.target.value
+    }),
+    options: guruList.map(g => g.Nama)
+  }), isXII && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Select, {
+    label: "Guru Pembimbing PKL (khusus kelas XII, terpisah dari Guru Wali)",
+    value: editing.Guru_Pembimbing_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Guru_Pembimbing_PKL: e.target.value
+    }),
+    options: guruList.map(g => g.Nama)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Pembimbing Lapangan PKL (dari tempat PKL)",
+    value: editing.Pembimbing_Lapangan_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Pembimbing_Lapangan_PKL: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tempat PKL",
+    value: editing.Tempat_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Tempat_PKL: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Latitude PKL",
+    value: editing.Lat_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Lat_PKL: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Longitude PKL",
+    value: editing.Long_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Long_PKL: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal Mulai PKL",
+    type: "date",
+    value: editing.Tanggal_Mulai_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Tanggal_Mulai_PKL: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal Selesai PKL",
+    type: "date",
+    value: editing.Tanggal_Selesai_PKL,
+    onChange: e => setEditing({
+      ...editing,
+      Tanggal_Selesai_PKL: e.target.value
+    })
+  })), /*#__PURE__*/React.createElement(Button, {
+    className: "md:col-span-2",
+    onClick: save
+  }, "Simpan"))));
+}
+function AdminHariLiburTab() {
+  const now = new Date();
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [tanggal, setTanggal] = useState(todayStr());
+  const [keterangan, setKeterangan] = useState("");
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  const [msg, setMsg] = useState(null);
+  function load() {
+    apiCall("getHariLibur", {
+      bulan,
+      tahun
+    }).then(setList).catch(e => setError(e.message));
+  }
+  useEffect(load, [bulan, tahun]);
+  async function tambah(e) {
+    e.preventDefault();
+    setError("");
+    setMsg(null);
+    try {
+      await apiCall("saveHariLibur", {
+        Tanggal: tanggal,
+        Keterangan: keterangan
+      });
+      setMsg("Hari libur ditambahkan.");
+      setKeterangan("");
+      load();
+    } catch (e2) {
+      setError(e2.message);
+    }
+  }
+  async function hapus(id) {
+    if (!confirm("Hapus hari libur ini?")) return;
+    try {
+      await apiCall("deleteHariLibur", {
+        ID: id
+      });
+      load();
+    } catch (e2) {
+      setError(e2.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Tambah Hari Libur"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mb-3"
+  }, "Sabtu & Minggu otomatis dianggap libur. Tambahkan di sini hari libur nasional/khusus lainnya sebelum mencetak rekap bulanan."), error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("form", {
+    onSubmit: tambah
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal Libur",
+    type: "date",
+    value: tanggal,
+    onChange: e => setTanggal(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Keterangan",
+    value: keterangan,
+    onChange: e => setKeterangan(e.target.value),
+    placeholder: "cth: Libur Hari Kemerdekaan",
+    required: true
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit"
+  }, "Simpan"))), /*#__PURE__*/React.createElement(Card, {
+    title: "Daftar Hari Libur",
+    actions: /*#__PURE__*/React.createElement("div", {
+      className: "flex gap-2"
+    }, /*#__PURE__*/React.createElement("select", {
+      value: bulan,
+      onChange: e => setBulan(Number(e.target.value)),
+      className: "border rounded px-2 py-1 text-sm"
+    }, NAMA_BULAN.map((b, i) => /*#__PURE__*/React.createElement("option", {
+      key: b,
+      value: i + 1
+    }, b))), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: tahun,
+      onChange: e => setTahun(Number(e.target.value)),
+      className: "border rounded px-2 py-1 text-sm w-20"
+    }))
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "divide-y max-h-96 overflow-y-auto"
+  }, list.map(l => /*#__PURE__*/React.createElement("div", {
+    key: l.ID,
+    className: "flex justify-between items-center py-2 text-sm"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, formatTanggalIndo(l.Tanggal)), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-500 text-xs"
+  }, l.Keterangan)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => hapus(l.ID),
+    className: "text-red-500 text-xs hover:underline"
+  }, "Hapus"))), list.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada hari libur khusus bulan ini."))));
+}
+function formatTanggalIndo(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric"
+  });
+}
+
+// Tabel rekap bulanan (dipakai untuk Guru & Siswa) - kolom tanggal 1..akhir bulan, IN / X / libur
+function AdminRekapBulananTab({
+  tipe
+}) {
+  const now = new Date();
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [kelas, setKelas] = useState("");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const printAreaRef = useRef(null);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const action = tipe === "guru" ? "getRekapAbsensiGuruBulanan" : "getRekapAbsensiSiswaBulanan";
+      const res = await apiCall(action, {
+        bulan,
+        tahun,
+        kelas: kelas || undefined
+      });
+      setData(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [bulan, tahun]);
+  const judul = tipe === "guru" ? "Rekap Absensi Guru & Pegawai" : "Rekap Absensi Siswa";
+
+  // Cetak dalam satu halaman: kertas A4 landscape, lalu skala tabel otomatis agar muat tingginya
+  function handlePrint() {
+    const styleTag = document.createElement("style");
+    styleTag.id = "temp-landscape-style";
+    styleTag.innerHTML = "@page { size: A4 landscape; margin: 6mm; }";
+    document.head.appendChild(styleTag);
+    const el = printAreaRef.current;
+    let originalStyle = "";
+    if (el) {
+      originalStyle = el.getAttribute("style") || "";
+      el.style.transform = "none";
+      el.style.width = "auto";
+      const availableHeightPx = (210 - 14) / 25.4 * 96; // tinggi area cetak A4 landscape (setelah margin)
+      const contentHeight = el.scrollHeight;
+      const scale = Math.min(1, availableHeightPx / contentHeight);
+      el.style.transformOrigin = "top left";
+      el.style.transform = "scale(" + scale + ")";
+      el.style.width = 100 / scale + "%";
+    }
+    setTimeout(() => {
+      window.print();
+      styleTag.remove();
+      if (el) el.setAttribute("style", originalStyle);
+    }, 80);
+  }
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    title: judul + " Bulanan"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 items-end mb-4 no-print"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "block"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Bulan"), /*#__PURE__*/React.createElement("select", {
+    value: bulan,
+    onChange: e => setBulan(Number(e.target.value)),
+    className: "border rounded-lg px-3 py-2 text-sm"
+  }, NAMA_BULAN.map((b, i) => /*#__PURE__*/React.createElement("option", {
+    key: b,
+    value: i + 1
+  }, b)))), /*#__PURE__*/React.createElement("label", {
+    className: "block"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Tahun"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: tahun,
+    onChange: e => setTahun(Number(e.target.value)),
+    className: "border rounded-lg px-3 py-2 text-sm w-24"
+  })), tipe === "siswa" && /*#__PURE__*/React.createElement(Input, {
+    label: "Filter Kelas (kosongkan untuk semua)",
+    value: kelas,
+    onChange: e => setKelas(e.target.value),
+    placeholder: "cth: X RPL 1"
+  }), /*#__PURE__*/React.createElement(Button, {
+    onClick: load
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Tampilkan"), data && /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    className: "no-print",
+    onClick: handlePrint
+  }, "🖨️ Cetak ", judul, " (1 Halaman)")), data && /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "text-xs border-collapse w-full"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "bg-gray-50"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "No"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1 text-left"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, tipe === "guru" ? "Jabatan" : "Kelas"), Array.from({
+    length: data.jumlahHariDalamBulan
+  }, (_, i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
+    className: "border px-1 py-1 w-6"
+  }, i + 1)), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "Hari Efektif"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "Hadir"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "%"))), /*#__PURE__*/React.createElement("tbody", null, data.data.map((row, idx) => /*#__PURE__*/React.createElement("tr", {
+    key: row.ID
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, idx + 1), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, row.Nama), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, tipe === "guru" ? row.NIP : row.NISN)), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, tipe === "guru" ? row.Jabatan : row.Kelas), row.Harian.map(h => /*#__PURE__*/React.createElement("td", {
+    key: h.tanggal,
+    className: classNames("border px-1 py-1 text-center", h.status === "LIBUR" && "bg-gray-100 text-gray-300", h.status === "X" && "text-red-500", h.status === "IN" && "text-emerald-600 font-medium")
+  }, h.status === "LIBUR" ? "" : h.status === "IN" ? "In" : "X")), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Hari_Efektif), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Jumlah_Hadir), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Persentase, "%"))))))), data && /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    ref: printAreaRef,
+    className: "hidden print:block bg-white p-4"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "text-base font-bold text-center"
+  }, judul.toUpperCase()), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-3"
+  }, "Bulan ", NAMA_BULAN[bulan - 1], " ", tahun), /*#__PURE__*/React.createElement("table", {
+    className: "text-[10px] border-collapse w-full"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, "No"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, tipe === "guru" ? "Jabatan" : "Kelas"), Array.from({
+    length: data.jumlahHariDalamBulan
+  }, (_, i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
+    className: "border px-0.5 py-1"
+  }, i + 1)), /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, "HE"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, "H"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-1 py-1"
+  }, "%"))), /*#__PURE__*/React.createElement("tbody", null, data.data.map((row, idx) => /*#__PURE__*/React.createElement("tr", {
+    key: row.ID
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1 text-center"
+  }, idx + 1), /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1"
+  }, row.Nama, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "8px",
+      color: "#666"
+    }
+  }, tipe === "guru" ? row.NIP : row.NISN)), /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1 text-center"
+  }, tipe === "guru" ? row.Jabatan : row.Kelas), row.Harian.map(h => /*#__PURE__*/React.createElement("td", {
+    key: h.tanggal,
+    className: "border px-0.5 py-1 text-center"
+  }, h.status === "LIBUR" ? "" : h.status === "IN" ? "In" : "X")), /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1 text-center"
+  }, row.Hari_Efektif), /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1 text-center"
+  }, row.Jumlah_Hadir), /*#__PURE__*/React.createElement("td", {
+    className: "border px-1 py-1 text-center"
+  }, row.Persentase, "%"))))), /*#__PURE__*/React.createElement("div", {
+    className: "print-signature"
+  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, formatTanggalIndo(todayStr()), /*#__PURE__*/React.createElement("br", null), "Admin / Tata Usaha", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null)))));
+}
+
+/* ============================================================================
+   MODUL SISWA REGULER
+   ============================================================================ */
+function SiswaHomeModule() {
+  const {
+    user
+  } = useAuth();
+  const [rekap, setRekap] = useState([]);
+  useEffect(() => {
+    apiCall("getRekapAbsenSiswa", {
+      ID_Siswa: user.ID
+    }).then(setRekap).catch(() => {});
+  }, []);
+  const perMapel = useMemo(() => {
+    const map = {};
+    rekap.forEach(r => {
+      map[r.Mapel] = map[r.Mapel] || {
+        Hadir: 0,
+        Sakit: 0,
+        Izin: 0,
+        Alfa: 0
+      };
+      if (map[r.Mapel][r.Status] !== undefined) map[r.Mapel][r.Status]++;
+    });
+    return map;
+  }, [rekap]);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "QR Absensi Pribadi Saya",
+    subtitle: "Tunjukkan QR ini ke Guru piket untuk discan setiap masuk dan pulang sekolah."
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-center"
+  }, /*#__PURE__*/React.createElement(MyQrCode, {
+    token: user.QR_Token
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mt-2"
+  }, "Kode ini bersifat pribadi dan tetap, tidak berubah setiap hari."))), /*#__PURE__*/React.createElement(Card, {
+    title: "Rekap Kehadiran per Mata Pelajaran"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2"
+  }, Object.keys(perMapel).map(m => /*#__PURE__*/React.createElement("div", {
+    key: m,
+    className: "flex justify-between text-sm border-b pb-1"
+  }, /*#__PURE__*/React.createElement("span", null, m), /*#__PURE__*/React.createElement("span", {
+    className: "space-x-1"
+  }, /*#__PURE__*/React.createElement(Badge, {
+    color: "green"
+  }, "H:", perMapel[m].Hadir), /*#__PURE__*/React.createElement(Badge, {
+    color: "amber"
+  }, "S:", perMapel[m].Sakit), /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, "I:", perMapel[m].Izin), /*#__PURE__*/React.createElement(Badge, {
+    color: "red"
+  }, "A:", perMapel[m].Alfa)))), Object.keys(perMapel).length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400 text-sm text-center py-6"
+  }, "Belum ada data absensi."))), /*#__PURE__*/React.createElement(Card, {
+    title: "Riwayat Absensi Terbaru",
+    className: "md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "max-h-72 overflow-y-auto divide-y text-sm"
+  }, rekap.slice(0, 15).map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-1.5 flex justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, r.Tanggal, " · ", r.Mapel), /*#__PURE__*/React.createElement(Badge, {
+    color: r.Status === "Hadir" ? "green" : "amber"
+  }, r.Status))))));
+}
+function SiswaAbsenQrModule() {
+  const {
+    user
+  } = useAuth();
+  const [scanning, setScanning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const scannerRef = useRef(null);
+  function startScan() {
+    setError("");
+    setResult(null);
+    setScanning(true);
+    setTimeout(() => {
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      scannerRef.current = html5QrCode;
+      html5QrCode.start({
+        facingMode: "environment"
+      }, {
+        fps: 10,
+        qrbox: 220
+      }, async decodedText => {
+        html5QrCode.stop();
+        setScanning(false);
+        try {
+          const res = await apiCall("absenSiswaViaQr", {
+            Token: decodedText,
+            ID_Siswa: user.ID,
+            Nama_Siswa: user.Nama
+          });
+          setResult(res.status);
+        } catch (e) {
+          setError(e.message);
+        }
+      }, () => {}).catch(e => setError("Gagal membuka kamera: " + e.message));
+    }, 100);
+  }
+  function stopScan() {
+    if (scannerRef.current) scannerRef.current.stop().catch(() => {});
+    setScanning(false);
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Absen Kehadiran - Scan QR Code",
+    subtitle: "Arahkan kamera ke QR Code yang ditampilkan oleh guru."
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), result && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, result), !scanning ? /*#__PURE__*/React.createElement(Button, {
+    onClick: startScan
+  }, "📷 Mulai Scan") : /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: stopScan
+  }, "Hentikan Scan"), /*#__PURE__*/React.createElement("div", {
+    id: "qr-reader",
+    className: "mt-4 max-w-sm"
+  }));
+}
+
+/* ============================================================================
+   MODUL JURNAL 7KAIH (SEMUA SISWA)
+   ============================================================================ */
+const SHALAT_LIST = [{
+  key: "Subuh",
+  field: "Shalat_Subuh_Jam"
+}, {
+  key: "Dzuhur",
+  field: "Shalat_Dzuhur_Jam"
+}, {
+  key: "Ashar",
+  field: "Shalat_Ashar_Jam"
+}, {
+  key: "Maghrib",
+  field: "Shalat_Maghrib_Jam"
+}, {
+  key: "Isya",
+  field: "Shalat_Isya_Jam"
+}];
+function Jurnal7KaihModule() {
+  const {
+    user
+  } = useAuth();
+  const [form, setForm] = useState({
+    Bangun_Pagi_Jam: "",
+    Shalat_Subuh_Jam: "",
+    Shalat_Dzuhur_Jam: "",
+    Shalat_Ashar_Jam: "",
+    Shalat_Maghrib_Jam: "",
+    Shalat_Isya_Jam: "",
+    Makan_Pagi_Menu: "",
+    Makan_Pagi_Jam: "",
+    Makan_Siang_Menu: "",
+    Makan_Siang_Jam: "",
+    Makan_Malam_Menu: "",
+    Makan_Malam_Jam: "",
+    Belajar_Kegiatan: "",
+    Bermasyarakat_Kegiatan: "",
+    Tidur_Jam: ""
+  });
+  const [olahraga, setOlahraga] = useState([""]);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState("");
+  const [riwayat, setRiwayat] = useState([]);
+  function set(field, val) {
+    setForm(f => ({
+      ...f,
+      [field]: val
+    }));
+  }
+  function loadRiwayat() {
+    apiCall("getJurnal7KaihBySiswa", {
+      ID_Siswa: user.ID
+    }).then(setRiwayat).catch(() => {});
+  }
+  useEffect(loadRiwayat, []);
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setMsg(null);
+    setError("");
+    try {
+      await apiCall("saveJurnal7Kaih", {
+        ...form,
+        ID_Siswa: user.ID,
+        Nama_Siswa: user.Nama,
+        Olahraga_Kegiatan: olahraga.filter(Boolean)
+      });
+      setMsg("Jurnal karakter 7KAIH hari ini tersimpan.");
+      loadRiwayat();
+    } catch (e2) {
+      setError(e2.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Jurnal Karakter 7 Kebiasaan Anak Indonesia Hebat",
+    subtitle: todayStr()
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("form", {
+    onSubmit: handleSubmit
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "1. Bangun Pagi (jam)",
+    type: "time",
+    value: form.Bangun_Pagi_Jam,
+    onChange: e => set("Bangun_Pagi_Jam", e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "2. Beribadah (Shalat Lima Waktu)"), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 md:grid-cols-3 gap-2 mb-3"
+  }, SHALAT_LIST.map(s => /*#__PURE__*/React.createElement(Input, {
+    key: s.key,
+    label: s.key,
+    type: "time",
+    value: form[s.field],
+    onChange: e => set(s.field, e.target.value)
+  }))), /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "3. Berolahraga (boleh lebih dari satu)"), olahraga.map((o, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "flex gap-2 mb-2"
+  }, /*#__PURE__*/React.createElement("input", {
+    className: "flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm",
+    value: o,
+    onChange: e => setOlahraga(arr => arr.map((x, idx) => idx === i ? e.target.value : x)),
+    placeholder: "cth: Lari pagi"
+  }), i === olahraga.length - 1 && /*#__PURE__*/React.createElement(Button, {
+    type: "button",
+    variant: "outline",
+    onClick: () => setOlahraga(a => [...a, ""])
+  }, "+"))), /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1 mt-2"
+  }, "4. Makan Sehat"), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2 mb-3"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Menu Sarapan",
+    value: form.Makan_Pagi_Menu,
+    onChange: e => set("Makan_Pagi_Menu", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Jam Sarapan",
+    type: "time",
+    value: form.Makan_Pagi_Jam,
+    onChange: e => set("Makan_Pagi_Jam", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Menu Makan Siang",
+    value: form.Makan_Siang_Menu,
+    onChange: e => set("Makan_Siang_Menu", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Jam Makan Siang",
+    type: "time",
+    value: form.Makan_Siang_Jam,
+    onChange: e => set("Makan_Siang_Jam", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Menu Makan Malam",
+    value: form.Makan_Malam_Menu,
+    onChange: e => set("Makan_Malam_Menu", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Jam Makan Malam",
+    type: "time",
+    value: form.Makan_Malam_Jam,
+    onChange: e => set("Makan_Malam_Jam", e.target.value)
+  })), /*#__PURE__*/React.createElement(Textarea, {
+    label: "5. Gemar Belajar (kegiatan belajar)",
+    rows: "2",
+    value: form.Belajar_Kegiatan,
+    onChange: e => set("Belajar_Kegiatan", e.target.value)
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "6. Bermasyarakat (kegiatan)",
+    rows: "2",
+    value: form.Bermasyarakat_Kegiatan,
+    onChange: e => set("Bermasyarakat_Kegiatan", e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "7. Tidur Cepat (jam tidur)",
+    type: "time",
+    value: form.Tidur_Jam,
+    onChange: e => set("Tidur_Jam", e.target.value)
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit",
+    className: "mt-2"
+  }, "Simpan Jurnal Hari Ini"))), /*#__PURE__*/React.createElement(Card, {
+    title: "Riwayat Jurnal 7KAIH"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "max-h-[36rem] overflow-y-auto divide-y text-sm"
+  }, riwayat.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-2"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, r.Tanggal), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-500 text-xs"
+  }, "Bangun ", r.Bangun_Pagi_Jam, " · Tidur ", r.Tidur_Jam))), riwayat.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada riwayat."))));
+}
+
+/* ============================================================================
+   MODUL SISWA KELAS XII - PKL
+   ============================================================================ */
+function SiswaPklHomeModule() {
+  const {
+    user
+  } = useAuth();
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState("");
+  const [locError, setLocError] = useState("");
+  const [msg, setMsg] = useState(null);
+  const [loading, setLoading] = useState(false);
+  function load() {
+    apiCall("getInfoPklSiswa", {
+      ID_Siswa: user.ID
+    }).then(setInfo).catch(e => setError(e.message));
+  }
+  useEffect(load, []);
+  async function doAbsen() {
+    setLoading(true);
+    setMsg(null);
+    setLocError("");
+    try {
+      const pos = await getCurrentPosition();
+      const res = await apiCall("absenPkl", {
+        ID_Siswa: user.ID,
+        Lat: pos.lat,
+        Long: pos.lng
+      });
+      setMsg(res.status + " (jarak " + res.jarak + " m)");
+      load();
+    } catch (e) {
+      setLocError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  if (!info) return /*#__PURE__*/React.createElement(Card, null, error ? /*#__PURE__*/React.createElement(Alert, null, error) : /*#__PURE__*/React.createElement(Spinner, null));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Informasi PKL"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "text-sm w-full"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Tempat PKL"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Tempat_PKL)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Pembimbing Lapangan"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Pembimbing_Lapangan_PKL)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Guru Wali"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Guru_Wali_Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Guru Pembimbing PKL"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Guru_Pembimbing_PKL)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Masa PKL"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Tanggal_Mulai_PKL, " s.d. ", info.Tanggal_Selesai_PKL)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Sisa Masa PKL"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Sisa_Hari_PKL !== null ? info.Sisa_Hari_PKL + " hari" : "-")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 text-gray-500"
+  }, "Jumlah Kehadiran"), /*#__PURE__*/React.createElement("td", {
+    className: "font-medium"
+  }, info.Jumlah_Kehadiran, " hari"))))), /*#__PURE__*/React.createElement(Card, {
+    title: "QR Absensi Pribadi Saya",
+    subtitle: "Untuk hari-hari kembali ke sekolah, tunjukkan QR ini ke Guru piket."
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-center"
+  }, /*#__PURE__*/React.createElement(MyQrCode, {
+    token: user.QR_Token,
+    size: 140
+  }))), /*#__PURE__*/React.createElement(Card, {
+    title: "Absen PKL (Validasi GPS radius 100m)",
+    className: "md:col-span-2"
+  }, locError && /*#__PURE__*/React.createElement(Alert, null, locError), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), !info.Sudah_Isi_Jurnal_Hari_Ini ? /*#__PURE__*/React.createElement(Alert, {
+    type: "info"
+  }, "Anda wajib mengisi Jurnal Harian PKL terlebih dahulu sebelum tombol absen terbuka. Silakan buka menu \"Jurnal Harian PKL\".") : /*#__PURE__*/React.createElement(Button, {
+    onClick: doAbsen,
+    disabled: loading
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Absen Sekarang")), /*#__PURE__*/React.createElement(Card, {
+    title: "Riwayat Kehadiran PKL",
+    className: "md:col-span-2"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Jam"), /*#__PURE__*/React.createElement("th", null, "Jarak"), /*#__PURE__*/React.createElement("th", null, "Status"))), /*#__PURE__*/React.createElement("tbody", null, info.Riwayat_Kehadiran.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, r.Tanggal), /*#__PURE__*/React.createElement("td", null, r.Jam), /*#__PURE__*/React.createElement("td", null, r.Jarak_Meter ? r.Jarak_Meter + " m" : "-"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: r.Status === "Hadir" ? "green" : "amber"
+  }, r.Status))))))));
+}
+function SiswaPklJurnalModule() {
+  const {
+    user
+  } = useAuth();
+  const [kegiatan, setKegiatan] = useState("");
+  const [foto, setFoto] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [error, setError] = useState("");
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setMsg(null);
+    setError("");
+    try {
+      await apiCall("saveJurnalPkl", {
+        ID_Siswa: user.ID,
+        Nama_Siswa: user.Nama,
+        Kegiatan_PKL: kegiatan,
+        Foto_Base64: foto
+      });
+      setMsg("Jurnal harian PKL tersimpan. Tombol absen sudah terbuka di menu Beranda PKL.");
+      setKegiatan("");
+      setFoto(null);
+    } catch (e2) {
+      setError(e2.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Jurnal Harian PKL",
+    subtitle: "Hari/Tanggal: " + todayStr()
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("form", {
+    onSubmit: handleSubmit
+  }, /*#__PURE__*/React.createElement(Textarea, {
+    label: "Kegiatan PKL Hari Ini",
+    rows: "4",
+    value: kegiatan,
+    onChange: e => setKegiatan(e.target.value),
+    required: true
+  }), /*#__PURE__*/React.createElement(CameraCapture, {
+    onCapture: setFoto
+  }), /*#__PURE__*/React.createElement(Button, {
+    type: "submit"
+  }, "Simpan Jurnal")));
+}
+
+/* ============================================================================
+   MODUL MANAJEMEN (KEPALA SEKOLAH / WAKA)
+   ============================================================================ */
+// Kartu statistik + daftar nama yang muncul langsung (tanpa perlu klik apa pun)
+// Kartu statistik elegan: header bergradasi warna penuh (bukan cuma aksen di sisi),
+// menampilkan persentase kehadiran besar, lalu daftar nama yang muncul langsung di bawahnya.
+function StatListCard({
+  title,
+  count,
+  total,
+  persen,
+  tone = "primary",
+  items,
+  emptyText,
+  renderItem
+}) {
+  const toneClasses = {
+    primary: "from-primary-600 to-primary-900",
+    secondary: "from-emerald-600 to-emerald-800",
+    accent: "from-amber-600 to-amber-800",
+    navy: "from-slate-700 to-slate-900"
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "rounded-xl shadow-md overflow-hidden bg-white border border-gray-100"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: classNames("bg-gradient-to-br text-white p-4", toneClasses[tone])
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs uppercase tracking-wide opacity-80"
+  }, title), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline gap-2 mt-1"
+  }, persen !== undefined && /*#__PURE__*/React.createElement("p", {
+    className: "text-3xl font-bold"
+  }, persen, "%"), /*#__PURE__*/React.createElement("p", {
+    className: classNames("font-medium", persen !== undefined ? "text-sm opacity-90" : "text-3xl font-bold")
+  }, count, total !== undefined && /*#__PURE__*/React.createElement("span", {
+    className: "opacity-75"
+  }, " / ", total)))), /*#__PURE__*/React.createElement("div", {
+    className: "max-h-48 overflow-y-auto divide-y text-sm p-2"
+  }, items && items.length > 0 ? items.map((item, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "py-1.5 px-1"
+  }, renderItem(item))) : /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400 text-xs py-4 text-center"
+  }, emptyText)));
+}
+function ManajemenModule() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    apiCall("getDashboardManajemen", {}).then(setData).catch(e => setError(e.message));
+  }, []);
+  if (error) return /*#__PURE__*/React.createElement(Alert, null, error);
+  if (!data) return /*#__PURE__*/React.createElement(Spinner, null);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-400 mb-4"
+  }, "Ringkasan aktivitas sekolah hari ini · ", formatTanggalIndo(data.tanggal)), /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4"
+  }, /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Persentase Kehadiran Guru",
+    tone: "primary",
+    persen: data.guru.persenHadir,
+    count: data.guru.sudahAbsen,
+    total: data.guru.totalGuru,
+    items: data.guru.listAbsen,
+    emptyText: "Belum ada guru yang absen.",
+    renderItem: g => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, g.Nama), /*#__PURE__*/React.createElement("span", {
+      className: "text-gray-400"
+    }, g.Jam_Masuk))
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Guru Sudah Mengisi Jurnal",
+    tone: "navy",
+    count: data.guru.sudahJurnal,
+    total: data.guru.totalGuru,
+    items: data.guru.listJurnal,
+    emptyText: "Belum ada jurnal masuk.",
+    renderItem: g => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", null, g.Nama), /*#__PURE__*/React.createElement("p", {
+      className: "text-xs text-gray-400"
+    }, g.Kelas, " · ", g.Mapel))
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Persentase Kehadiran Siswa",
+    tone: "secondary",
+    persen: data.siswaReguler.persenHadir,
+    count: data.siswaReguler.sudahScan,
+    total: data.siswaReguler.total,
+    items: data.siswaReguler.list,
+    emptyText: "Belum ada siswa yang scan.",
+    renderItem: s => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, s.Nama), /*#__PURE__*/React.createElement("span", {
+      className: "text-gray-400"
+    }, s.Kelas))
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Jurnal 7KAIH Terisi",
+    tone: "accent",
+    count: data.karakter7kaih.sudahMengisi,
+    items: data.karakter7kaih.list,
+    emptyText: "Belum ada jurnal karakter.",
+    renderItem: s => /*#__PURE__*/React.createElement("span", null, s.Nama)
+  })), /*#__PURE__*/React.createElement(Card, {
+    title: "Siswa PKL Kelas XII"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-3 gap-4 mb-4"
+  }, /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Persentase Kehadiran Siswa PKL",
+    tone: "secondary",
+    persen: data.siswaPkl.persenHadir,
+    count: data.siswaPkl.sudahAbsen,
+    total: data.siswaPkl.total,
+    items: data.siswaPkl.detail.filter(d => d.Status === "Hadir"),
+    emptyText: "Belum ada yang absen.",
+    renderItem: d => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, d.Nama), /*#__PURE__*/React.createElement("span", {
+      className: "text-gray-400"
+    }, d.Jarak, " m"))
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Sudah Isi Jurnal PKL",
+    tone: "navy",
+    count: data.siswaPkl.sudahJurnal,
+    total: data.siswaPkl.total,
+    items: data.siswaPkl.detail,
+    emptyText: "Belum ada jurnal PKL.",
+    renderItem: d => /*#__PURE__*/React.createElement("span", null, d.Nama)
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Semua Siswa PKL & Status",
+    tone: "primary",
+    count: data.siswaPkl.total,
+    items: data.siswaPkl.detail,
+    emptyText: "Tidak ada data.",
+    renderItem: d => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, d.Nama), /*#__PURE__*/React.createElement(Badge, {
+      color: d.Status === "Hadir" ? "green" : "amber"
+    }, d.Status))
+  }))));
+}
+function WakaHubmiPklModule() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    apiCall("getDashboardManajemen", {}).then(setData).catch(() => {});
+  }, []);
+  if (!data) return /*#__PURE__*/React.createElement(Spinner, null);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4"
+  }, /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Persentase Kehadiran Siswa PKL Hari Ini",
+    tone: "secondary",
+    persen: data.siswaPkl.persenHadir,
+    count: data.siswaPkl.sudahAbsen,
+    total: data.siswaPkl.total,
+    items: data.siswaPkl.detail.filter(d => d.Status === "Hadir"),
+    emptyText: "Belum ada yang absen.",
+    renderItem: d => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, d.Nama), /*#__PURE__*/React.createElement("span", {
+      className: "text-gray-400"
+    }, d.Jam, " · ", d.Jarak, " m"))
+  }), /*#__PURE__*/React.createElement(StatListCard, {
+    title: "Semua Siswa PKL & Statusnya",
+    tone: "primary",
+    count: data.siswaPkl.total,
+    items: data.siswaPkl.detail,
+    emptyText: "Tidak ada data.",
+    renderItem: d => /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between"
+    }, /*#__PURE__*/React.createElement("span", null, d.Nama), /*#__PURE__*/React.createElement(Badge, {
+      color: d.Status === "Hadir" ? "green" : "amber"
+    }, d.Status))
+  }));
+}
+
+/* ============================================================================
+   ROOT APP
+   ============================================================================ */
+function App() {
+  return /*#__PURE__*/React.createElement(AuthProvider, null, /*#__PURE__*/React.createElement(AppContent, null));
+}
+function AppContent() {
+  const {
+    user
+  } = useAuth();
+  return user ? /*#__PURE__*/React.createElement(AppShell, null) : /*#__PURE__*/React.createElement(LoginPage, null);
+}
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+</script>
+
+<!-- Registrasi Service Worker: mengaktifkan opsi "Install App" / "Tambahkan ke Layar Utama" di HP & Laptop -->
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function (err) {
+        console.warn("Service worker gagal didaftarkan:", err);
+      });
+    });
+  }
+</script>
+</body>
+</html>
