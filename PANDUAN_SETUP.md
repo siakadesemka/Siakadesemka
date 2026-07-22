@@ -55,7 +55,27 @@ Dua peran ini sekarang jelas terpisah di form Data Siswa:
 ### Roster Mengajar Guru
 Sekarang berupa jadwal terstruktur (bukan teks bebas): Admin menambahkan baris jadwal berisi **Hari, Kelas, Mapel, dan Jam Ke (pilihan 1-9)** langsung dari dropdown. Guru melihat hasilnya sebagai tabel rapi di menu **Beranda Guru**.
 
-### Dashboard Kepala Sekolah / Waka Kurikulum / Waka Hubmi
+### Notifikasi WhatsApp ke Orang Tua & Guru Wali
+Google Apps Script tidak bisa mengirim WhatsApp langsung (tidak ada API resmi gratis dari WhatsApp/Meta tanpa verifikasi bisnis). Solusinya memakai **layanan gateway pihak ketiga** yang menghubungkan nomor WhatsApp biasa ke sebuah REST API. Kode sudah disiapkan mengikuti pola **Fonnte** (https://fonnte.com) karena paling umum & terjangkau dipakai sekolah di Indonesia — kalau kamu berlangganan gateway lain (Wablas, Whacenter, dll), tinggal sesuaikan format `payload` di fungsi `kirimWA()` pada Code.gs sesuai dokumentasi masing-masing.
+
+**Cara mengaktifkan:**
+1. Daftar di Fonnte (atau gateway pilihanmu), scan QR nomor WhatsApp sekolah/admin sekali di sana.
+2. Salin API Token yang diberikan, tempel ke `CONFIG.WA_TOKEN` di Code.gs.
+3. Ubah `CONFIG.WA_AKTIF` dari `false` menjadi `true`.
+4. Isi nomor HP di data master:
+   - **No. HP** di form Data Guru & Pegawai (dipakai untuk notifikasi ke Guru Wali).
+   - **No. HP Orang Tua** di form Data Siswa (dipakai untuk notifikasi absen masuk/pulang).
+5. Jalankan fungsi **setupTriggerCekAbsen** sekali secara manual dari editor Apps Script (pilih di dropdown toolbar, klik Run, izinkan aksesnya) — ini memasang jadwal otomatis yang mengecek pukul 10:00 setiap hari.
+
+**Yang terjadi otomatis setelah aktif:**
+- Saat siswa absen masuk (scan QR gerbang) → WA terkirim ke orang tua: *"Ananda [Nama] sudah masuk sekolah pada tanggal [tanggal], jam [jam:menit:detik]."*
+- Saat siswa absen pulang → WA serupa dengan kalimat "sudah pulang sekolah".
+- Setiap pukul 10:00, sistem otomatis mengecek siswa yang belum absen masuk, lalu mengirim WA ke masing-masing **Guru Wali** berisi daftar nama siswa perwaliannya yang belum absen.
+- Kalau nomor HP kosong atau `WA_AKTIF` masih `false`, sistem tetap berjalan normal (notifikasi cuma dilewati, tidak error).
+
+### Jurnal Mengajar: Kehadiran dari Absen Gerbang Pagi
+Daftar kehadiran sekarang berupa **satu daftar gabungan** semua siswa di kelas tsb: yang sudah absen masuk pagi otomatis tercentang (hadir), yang belum absen masuk tidak tercentang. Guru tinggal koreksi centang bila perlu; untuk yang tidak dicentang, pilih keterangan **Alfa / Izin / Sakit** (tanpa opsi "Hadir" — kehadiran cukup lewat centang).
+
 Sekarang tampil sebagai kartu-kartu (card) yang langsung menampilkan nama-nama secara live (bukan cuma angka) — misalnya kartu "Siswa Hadir (Scan QR)" langsung memuat daftar nama siswa yang sudah hadir hari itu, begitu juga guru yang absen, guru yang mengisi jurnal, dan siswa PKL.
 
 ### Logo & Identitas
@@ -80,6 +100,29 @@ Akun dengan role **Kepala Sekolah** sekarang punya menu **Absensi Saya** (selain
 - **Rekap Absensi Siswa** diurutkan per Kelas lalu Nama.
 - Tombol cetak akan otomatis mengatur kertas ke **landscape** dan menyesuaikan skala tabel agar **muat dalam satu halaman**. Untuk data yang sangat banyak (puluhan pegawai/siswa dengan bulan 31 hari), tulisan bisa menjadi sangat kecil — ini adalah upaya terbaik ("best effort") untuk memuat semuanya di satu halaman; jika perlu dibaca dengan nyaman, gunakan zoom PDF setelah dicetak/disimpan.
 - Kolom tanda tangan **Kepala Sekolah** tetap tercetak di bagian bawah tabel.
+
+### Jurnal Kegiatan MGMP (Menu Baru untuk Guru)
+Guru sekarang punya menu **Jurnal Kegiatan MGMP** — form: Hari, Tanggal, Uraian Kegiatan, dan Foto Kegiatan (kamera native). Riwayatnya tampil di sebelahnya, diberi nomor urut otomatis.
+
+### QR Absensi Siswa Sekarang Berubah Setiap Hari
+Kode QR pribadi yang tampil di akun siswa **tidak lagi tetap** — sekarang otomatis berganti setiap hari (dihitung dari kombinasi rahasia unik siswa + tanggal hari itu). Ini mencegah kode QR disalahgunakan kalau sempat difoto/disebar, karena kode kemarin otomatis tidak berlaku lagi hari ini. Siswa tidak perlu melakukan apa pun berbeda — cukup buka menu Beranda seperti biasa, kode barunya otomatis tampil.
+
+### Tata Usaha Bisa Ikut Melakukan Scan Absensi Siswa
+Selain Guru, sekarang Tata Usaha juga punya menu **Scan Absensi Siswa** untuk mencatat absen masuk/pulang siswa lewat QR gerbang.
+
+### Tampilkan/Sembunyikan Password di Halaman Login
+Ada tombol "Lihat" di sebelah kolom password untuk menampilkan karakter yang diketik, memudahkan pengguna memastikan password benar sebelum login.
+
+### Cetak Jurnal Mengajar: Format Landscape Lebih Lengkap
+Cetakan jurnal mengajar sekarang otomatis landscape, dan menampilkan **Pertemuan Ke** (field baru di form jurnal), Tujuan Pembelajaran & Materi Pembelajaran secara terpisah, serta tabel **Siswa Hadir** dan **Siswa Tidak Hadir** berdampingan (dua kolom terpisah), selain elemen sebelumnya (kop sekolah, kolom tanda tangan Kepala Sekolah & Guru).
+
+### Rekap Absensi Guru & Pegawai: Urutan Terbaru
+- **Administrator (Admin) tidak lagi ditampilkan** dalam rekap absensi guru/pegawai bulanan.
+- Urutan baris: **Kepala Sekolah paling atas**, lalu sisanya diurutkan berdasarkan **tahun pengangkatan** yang diambil dari digit ke-9 sampai ke-12 NIP (format NIP 18 digit standar PNS Indonesia: 8 digit tanggal lahir + 4 digit tahun TMT pengangkatan + sisanya). Semakin awal tahun pengangkatannya, semakin atas urutannya.
+- Kalau NIP seorang pegawai tidak mengikuti format 18-digit standar (misalnya honorer dengan kode internal sekolah), sistem otomatis jatuh ke urutan berdasarkan angka NIP secara keseluruhan sebagai cadangan.
+
+### Tombol Logout
+Tombol "Keluar" di sidebar sekarang bertuliskan **"Logout"** dengan latar warna merah, supaya lebih mudah dikenali.
 
 ### Dashboard Monitoring dengan Persentase & Warna Elegan
 Kartu-kartu di Dashboard Eksekutif (Kepala Sekolah/Waka Kurikulum/Waka Hubmi) sekarang memakai header bergradasi warna penuh (bukan cuma aksen di sisi), dan langsung menampilkan **persentase kehadiran** — untuk Guru, Siswa reguler, maupun Siswa PKL — beserta daftar nama secara live di bawahnya.

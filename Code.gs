@@ -24,8 +24,8 @@
 // ============================================================================
 
 const CONFIG = {
-  SCHOOL_LAT: -5.5480,      // Ganti dengan koordinat sekolah Anda
-  SCHOOL_LNG: 95.3238,      // Ganti dengan koordinat sekolah Anda
+  SCHOOL_LAT: 4.390969033108471,      // Ganti dengan koordinat sekolah Anda
+  SCHOOL_LNG: 96.04080703278136,      // Ganti dengan koordinat sekolah Anda
   RADIUS_GURU_METER: 500,
   RADIUS_PKL_METER: 100,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
@@ -35,7 +35,13 @@ const CONFIG = {
   BATAS_ABSEN_MASUK_NORMAL: "12:00",  // batas akhir absen masuk (Senin-Kamis, Sabtu)
   BATAS_ABSEN_MASUK_JUMAT: "11:00",   // batas akhir absen masuk khusus hari Jumat
   JAM_MASUK_STANDAR: "08:00",         // jam masuk normal, dipakai menghitung keterlambatan
-  JAM_MULAI_ABSEN_PULANG: "12:00"     // absen pulang baru bisa dilakukan setelah jam ini
+  JAM_MULAI_ABSEN_PULANG: "12:00",    // absen pulang baru bisa dilakukan setelah jam ini
+
+  // Notifikasi WhatsApp (lihat catatan di fungsi kirimWA - pakai layanan gateway pihak ketiga, cth. Fonnte)
+  WA_AKTIF: false,                     // ubah ke true setelah token diisi & sudah siap dipakai
+  WA_GATEWAY_URL: "https://api.fonnte.com/send",
+  WA_TOKEN: "ISI_TOKEN_GATEWAY_WA_ANDA",
+  JAM_BATAS_CEK_BELUM_ABSEN: "10:00"  // jam pengecekan siswa yang belum absen (untuk notifikasi ke Guru Wali)
 };
 
 const SHEET_NAMES = {
@@ -48,7 +54,8 @@ const SHEET_NAMES = {
   JURNAL_7KAIH: "Jurnal_7KAIH",
   QR_SESSIONS: "QR_Sessions", // sesi QR yang dibuat guru untuk absen siswa
   ABSEN_HARIAN_SISWA: "Absen_Harian_Siswa", // absen gerbang harian via QR pribadi siswa
-  HARI_LIBUR: "Hari_Libur"
+  HARI_LIBUR: "Hari_Libur",
+  JURNAL_MGMP: "Jurnal_MGMP"
 };
 
 // Definisi header setiap sheet. setupDatabase() akan membuat sheet + header
@@ -59,7 +66,7 @@ const SHEET_SCHEMAS = {
     "Kelas_Diampu", "Mapel_Diampu", "Roster_Mengajar_JSON", "Guru_Wali_Nama",
     "Guru_Pembimbing_PKL", "Pembimbing_Lapangan_PKL", "Tempat_PKL",
     "Lat_PKL", "Long_PKL", "Tanggal_Mulai_PKL", "Tanggal_Selesai_PKL",
-    "QR_Token", "CreatedAt"
+    "QR_Token", "No_HP", "No_HP_OrangTua", "CreatedAt"
   ],
   Absen_Guru: [
     "ID", "ID_Guru", "Nama_Guru", "Tanggal", "Jam_Masuk", "Jam_Pulang",
@@ -75,7 +82,7 @@ const SHEET_SCHEMAS = {
   ],
   Jurnal_Mengajar: [
     "ID", "ID_Guru", "Nama_Guru", "Hari", "Tanggal", "Kelas", "Mapel",
-    "Jam_Ke", "Tujuan_Pembelajaran", "Materi", "Catatan_Kelas",
+    "Jam_Ke", "Pertemuan_Ke", "Tujuan_Pembelajaran", "Materi", "Catatan_Kelas",
     "Kehadiran_Siswa_JSON", "Foto_URL", "CreatedAt"
   ],
   Jurnal_Bimbingan: [
@@ -104,6 +111,9 @@ const SHEET_SCHEMAS = {
   ],
   Hari_Libur: [
     "ID", "Tanggal", "Keterangan", "CreatedAt"
+  ],
+  Jurnal_MGMP: [
+    "ID", "ID_Guru", "Nama_Guru", "Hari", "Tanggal", "Uraian_Kegiatan", "Foto_URL", "CreatedAt"
   ]
 };
 
@@ -185,6 +195,7 @@ function doPost(e) {
 
     saveJurnalMengajar: apiSaveJurnalMengajar,
     getJurnalMengajarByGuru: apiGetJurnalMengajarByGuru,
+    getStatusAbsenHarianKelas: apiGetStatusAbsenHarianKelas,
 
     generateQrSession: apiGenerateQrSession,
     absenSiswaViaQr: apiAbsenSiswaViaQr,
@@ -199,6 +210,11 @@ function doPost(e) {
 
     saveJurnalBimbingan: apiSaveJurnalBimbingan,
     getJurnalBimbinganByGuru: apiGetJurnalBimbinganByGuru,
+
+    saveJurnalMgmp: apiSaveJurnalMgmp,
+    getJurnalMgmpByGuru: apiGetJurnalMgmpByGuru,
+
+    getKodeQrHarianSiswa: apiGetKodeQrHarianSiswa,
 
     getRekapKehadiranKelas: apiGetRekapKehadiranKelas,
     getDashboardManajemen: apiGetDashboardManajemen,
@@ -251,9 +267,17 @@ function readSheetAsObjects(sheetName) {
   if (lastRow < 2) return [];
   const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  // Kolom yang boleh tetap membawa jam lengkap (timestamp), selain itu tanggal diringkas jadi yyyy-MM-dd saja
+  const KOLOM_TIMESTAMP_LENGKAP = ["CreatedAt", "ExpiredAt"];
   return values.map(function (row, idx) {
     const obj = { _rowIndex: idx + 2 };
-    headers.forEach(function (h, i) { obj[h] = row[i]; });
+    headers.forEach(function (h, i) {
+      let val = row[i];
+      if (val instanceof Date && KOLOM_TIMESTAMP_LENGKAP.indexOf(h) === -1) {
+        val = formatDateOnly(val);
+      }
+      obj[h] = val;
+    });
     return obj;
   });
 }
@@ -550,6 +574,32 @@ function safeParseJson(str) {
   try { return JSON.parse(str); } catch (e) { return []; }
 }
 
+// payload: { Kelas, Tanggal } -> daftar siswa kelas tsb, dipisah: sudah absen masuk (gerbang QR pribadi)
+// dan belum absen masuk pada tanggal tersebut. Dipakai Jurnal Mengajar untuk memilih kehadiran
+// tanpa perlu scan QR ulang oleh guru mata pelajaran.
+function apiGetStatusAbsenHarianKelas(payload) {
+  const tanggalTarget = formatDateOnly(payload.Tanggal);
+  const users = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
+  });
+  const absenHarian = readSheetAsObjects(SHEET_NAMES.ABSEN_HARIAN_SISWA).filter(function (r) {
+    return formatDateOnly(r.Tanggal) === tanggalTarget && r.Jam_Masuk;
+  });
+  const absenMap = {};
+  absenHarian.forEach(function (r) { absenMap[r.ID_Siswa] = r.Jam_Masuk; });
+
+  const sudahAbsen = [];
+  const belumAbsen = [];
+  users.forEach(function (u) {
+    if (absenMap[u.ID]) {
+      sudahAbsen.push({ ID_Siswa: u.ID, Nama: u.Nama, Jam_Masuk: absenMap[u.ID] });
+    } else {
+      belumAbsen.push({ ID_Siswa: u.ID, Nama: u.Nama });
+    }
+  });
+  return { sudahAbsen: sudahAbsen, belumAbsen: belumAbsen };
+}
+
 // ============================================================================
 // MODUL B/D: QR CODE ABSEN SISWA REGULER
 // ============================================================================
@@ -767,6 +817,30 @@ function apiGetJurnalBimbinganByGuru(payload) {
 }
 
 // ============================================================================
+// MODUL GURU: JURNAL KEGIATAN MGMP
+// ============================================================================
+
+// payload: { ID_Guru, Nama_Guru, Hari, Tanggal, Uraian_Kegiatan, Foto_Base64 }
+function apiSaveJurnalMgmp(payload) {
+  const obj = Object.assign({}, payload);
+  obj.ID = generateId("MGMP");
+  obj.CreatedAt = new Date();
+  if (payload.Foto_Base64) {
+    const uploaded = apiUploadPhoto({ base64Data: payload.Foto_Base64, fileName: "mgmp_" + obj.ID + ".jpg" });
+    obj.Foto_URL = uploaded.url;
+  }
+  delete obj.Foto_Base64;
+  appendRowFromObject(SHEET_NAMES.JURNAL_MGMP, obj);
+  return obj;
+}
+
+function apiGetJurnalMgmpByGuru(payload) {
+  return readSheetAsObjects(SHEET_NAMES.JURNAL_MGMP)
+    .filter(function (r) { return r.ID_Guru === payload.ID_Guru; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+}
+
+// ============================================================================
 // MODUL B: REKAP KEHADIRAN KELAS (WALI KELAS) - UNTUK CETAK
 // ============================================================================
 
@@ -806,16 +880,44 @@ function apiGetRekapKehadiranKelas(payload) {
 }
 
 // ============================================================================
-// ABSEN HARIAN SISWA VIA QR PRIBADI (discan oleh akun Guru, bukan siswa)
+// ABSEN HARIAN SISWA VIA QR PRIBADI (discan oleh akun Guru/Tata Usaha)
 // ============================================================================
+// Catatan: kolom "QR_Token" di Users_Master sekarang berfungsi sebagai SEED
+// permanen (dibuat sekali saat data siswa disimpan, tidak pernah berubah).
+// Kode QR yang benar-benar ditampilkan & dipindai berubah SETIAP HARI, yaitu
+// hasil hash dari (seed + tanggal hari ini). Ini membuat QR tidak bisa
+// dipakai ulang di hari lain seandainya difoto/disebar oleh siswa lain.
 
-// payload: { QR_Token, ID_Guru, Nama_Guru, tipe: "masuk" | "pulang" }
+function md5Hex(str) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, str, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) {
+    const v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? "0" + v : v;
+  }).join("");
+}
+
+function kodeQrHarian(seed, tanggalStr) {
+  return md5Hex(seed + "|" + tanggalStr).substring(0, 10).toUpperCase();
+}
+
+// payload: { ID_Siswa } -> kode QR yang berlaku hari ini untuk siswa tsb
+function apiGetKodeQrHarianSiswa(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const siswa = users.find(function (u) { return u.ID === payload.ID_Siswa; });
+  if (!siswa || !siswa.QR_Token) throw new Error("Data QR siswa tidak ditemukan.");
+  const today = formatDateOnly(new Date());
+  return { kode: kodeQrHarian(siswa.QR_Token, today), tanggal: today };
+}
+
+// payload: { QR_Token (kode yang discan, bukan seed), ID_Guru, Nama_Guru, tipe: "masuk" | "pulang" }
 function apiAbsenHarianViaQr(payload) {
   const users = readSheetAsObjects(SHEET_NAMES.USERS);
-  const siswa = users.find(function (u) { return u.QR_Token === payload.QR_Token; });
-  if (!siswa) throw new Error("QR Code tidak dikenali atau bukan milik siswa terdaftar.");
-
   const today = formatDateOnly(new Date());
+  const siswa = users.find(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.QR_Token && kodeQrHarian(u.QR_Token, today) === String(payload.QR_Token).toUpperCase();
+  });
+  if (!siswa) throw new Error("QR Code tidak dikenali, bukan milik siswa terdaftar, atau sudah kedaluwarsa (QR berlaku 1 hari).");
+
   const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "HH:mm:ss");
   const existing = readSheetAsObjects(SHEET_NAMES.ABSEN_HARIAN_SISWA).find(function (r) {
     return r.ID_Siswa === siswa.ID && formatDateOnly(r.Tanggal) === today;
@@ -825,6 +927,7 @@ function apiAbsenHarianViaQr(payload) {
     if (!existing) throw new Error(siswa.Nama + " belum tercatat absen masuk hari ini.");
     if (existing.Jam_Pulang) throw new Error(siswa.Nama + " sudah tercatat absen pulang hari ini.");
     updateRowByField(SHEET_NAMES.ABSEN_HARIAN_SISWA, "ID", existing.ID, { Jam_Pulang: now });
+    kirimNotifikasiOrangTua(siswa, "pulang", today, now);
     return { status: "Absen pulang " + siswa.Nama + " tercatat", jam: now, nama: siswa.Nama };
   }
 
@@ -842,7 +945,93 @@ function apiAbsenHarianViaQr(payload) {
     CreatedAt: new Date()
   };
   appendRowFromObject(SHEET_NAMES.ABSEN_HARIAN_SISWA, obj);
+  kirimNotifikasiOrangTua(siswa, "masuk", today, now);
   return { status: "Absen masuk " + siswa.Nama + " tercatat", jam: now, nama: siswa.Nama };
+}
+
+// ============================================================================
+// NOTIFIKASI WHATSAPP
+// ============================================================================
+// CATATAN PENTING: Google Apps Script tidak bisa mengirim WhatsApp secara
+// langsung (tidak ada API resmi gratis dari WhatsApp/Meta untuk ini tanpa
+// verifikasi bisnis). Solusi paling praktis untuk sekolah di Indonesia adalah
+// memakai layanan gateway pihak ketiga yang menghubungkan nomor WhatsApp
+// biasa (di-scan sekali via QR) ke sebuah REST API, misalnya Fonnte, Wablas,
+// atau Whacenter. Kode di bawah ini sudah disiapkan mengikuti pola Fonnte
+// (https://fonnte.com), karena paling umum dipakai & murah untuk kasus
+// seperti ini. Langkah setup singkat:
+//   1. Daftar & scan QR nomor WhatsApp sekolah/admin di layanan pilihan Anda.
+//   2. Salin API Token yang diberikan, isi ke CONFIG.WA_TOKEN.
+//   3. Ubah CONFIG.WA_AKTIF menjadi true.
+//   4. Kalau memakai gateway lain (bukan Fonnte), sesuaikan format
+//      payload di fungsi kirimWA() sesuai dokumentasi gateway tsb.
+
+function kirimWA(nomorTujuan, pesan) {
+  if (!CONFIG.WA_AKTIF) return; // belum diaktifkan, lewati diam-diam
+  if (!nomorTujuan) return; // nomor HP belum diisi di data siswa/guru
+  try {
+    UrlFetchApp.fetch(CONFIG.WA_GATEWAY_URL, {
+      method: "post",
+      headers: { Authorization: CONFIG.WA_TOKEN },
+      payload: { target: String(nomorTujuan), message: pesan },
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log("Gagal mengirim WhatsApp ke " + nomorTujuan + ": " + e.message);
+  }
+}
+
+function formatTanggalPanjangIndo(dateStr) {
+  const namaBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const d = new Date(dateStr);
+  return d.getDate() + " " + namaBulan[d.getMonth()] + " " + d.getFullYear();
+}
+
+function kirimNotifikasiOrangTua(siswa, tipe, tanggal, jam) {
+  if (!siswa.No_HP_OrangTua) return;
+  const aksi = tipe === "masuk" ? "sudah masuk sekolah" : "sudah pulang sekolah";
+  const pesan = "Ananda " + siswa.Nama + " " + aksi + " pada tanggal " + formatTanggalPanjangIndo(tanggal) + ", jam " + jam + ".";
+  kirimWA(siswa.No_HP_OrangTua, pesan);
+}
+
+// Dipanggil otomatis tiap hari pukul 10:00 lewat trigger (lihat setupTriggerCekAbsen).
+// Mengecek siswa yang belum absen masuk, lalu mengirim WA ke masing-masing Guru Wali.
+function cekSiswaBelumAbsenPagi() {
+  const today = formatDateOnly(new Date());
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const siswaAll = users.filter(function (u) { return parseRoles(u.Role_List).indexOf("Siswa") !== -1; });
+  const sudahSet = {};
+  readSheetAsObjects(SHEET_NAMES.ABSEN_HARIAN_SISWA).forEach(function (r) {
+    if (formatDateOnly(r.Tanggal) === today && r.Jam_Masuk) sudahSet[r.ID_Siswa] = true;
+  });
+  const belum = siswaAll.filter(function (s) { return !sudahSet[s.ID]; });
+  if (belum.length === 0) return;
+
+  const byGuruWali = {};
+  belum.forEach(function (s) {
+    const namaWali = s.Guru_Wali_Nama || "(Belum ada Guru Wali)";
+    byGuruWali[namaWali] = byGuruWali[namaWali] || [];
+    byGuruWali[namaWali].push(s);
+  });
+
+  Object.keys(byGuruWali).forEach(function (namaGuruWali) {
+    const guru = users.find(function (u) { return u.Nama === namaGuruWali; });
+    if (!guru || !guru.No_HP) return;
+    const daftar = byGuruWali[namaGuruWali].map(function (s) { return "- " + s.Nama + " (" + s.Kelas_Diampu + ")"; }).join("\n");
+    const pesan = "Pemberitahuan SIAKAD ESEMKASA:\nSampai pukul " + CONFIG.JAM_BATAS_CEK_BELUM_ABSEN + " hari ini (" + formatTanggalPanjangIndo(today) + "), siswa perwalian Bapak/Ibu berikut belum tercatat absen masuk:\n" + daftar;
+    kirimWA(guru.No_HP, pesan);
+  });
+}
+
+// Jalankan fungsi ini SEKALI SAJA secara manual dari editor Apps Script
+// (pilih di dropdown toolbar, klik Run) untuk memasang jadwal otomatis
+// pengecekan siswa belum absen setiap pukul 10:00.
+function setupTriggerCekAbsen() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "cekSiswaBelumAbsenPagi") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("cekSiswaBelumAbsenPagi").timeBased().everyDays(1).atHour(10).nearMinute(0).create();
+  return "Trigger terpasang: cekSiswaBelumAbsenPagi akan berjalan otomatis setiap hari sekitar pukul 10:00.";
 }
 
 // ============================================================================
@@ -906,7 +1095,7 @@ function apiGetRekapAbsensiGuruBulanan(payload) {
 
   const users = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
     const roles = parseRoles(u.Role_List);
-    return roles.indexOf("Siswa") === -1 && roles.length > 0;
+    return roles.indexOf("Siswa") === -1 && roles.indexOf("Admin") === -1 && roles.length > 0;
   });
   const absenGuru = readSheetAsObjects(SHEET_NAMES.ABSEN_GURU);
 
@@ -959,8 +1148,23 @@ function apiGetRekapAbsensiGuruBulanan(payload) {
   return { bulan: bulan, tahun: tahun, jumlahHariDalamBulan: jumlahHari, hariEfektif: hariEfektif.length, data: rows };
 }
 
-// Membandingkan NIP secara numerik jika memungkinkan (NIP lebih kecil = diangkat lebih dulu), fallback ke teks
+// Mengambil "tahun pengangkatan pegawai" dari NIP format Indonesia (18 digit):
+// digit 1-8 = tanggal lahir (YYYYMMDD), digit 9-12 = tahun TMT pengangkatan (YYYY), dst.
+// Semakin kecil tahun ini, semakin dulu diangkat, sehingga ditempatkan lebih atas.
+function ambilTahunPengangkatan(nip) {
+  const digitsOnly = String(nip).replace(/\D/g, "");
+  if (digitsOnly.length >= 12) {
+    const tahun = Number(digitsOnly.substring(8, 12));
+    if (!isNaN(tahun) && tahun > 1900 && tahun < 2100) return tahun;
+  }
+  return null;
+}
+
+// Membandingkan NIP berdasarkan tahun pengangkatan (digit ke-9 s.d. 12); fallback ke urutan NIP penuh jika format tidak dikenali
 function compareNip(a, b) {
+  const ta = ambilTahunPengangkatan(a);
+  const tb = ambilTahunPengangkatan(b);
+  if (ta !== null && tb !== null && ta !== tb) return ta - tb;
   const na = Number(String(a).replace(/\D/g, ""));
   const nb = Number(String(b).replace(/\D/g, ""));
   if (!isNaN(na) && !isNaN(nb) && na !== 0 && nb !== 0) return na - nb;
