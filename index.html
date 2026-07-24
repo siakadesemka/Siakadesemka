@@ -48,6 +48,9 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
 
+<!-- Library ekspor Excel (dipakai untuk unduh rekap absensi guru & siswa dalam format .xlsx) -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <!--
   CATATAN: Kode React di bawah ini SUDAH DIKOMPILASI (JSX -> JavaScript biasa)
   sebelumnya, jadi halaman ini TIDAK butuh Babel di browser lagi. Ini sengaja
@@ -682,11 +685,36 @@ const ROLE_MENU = {
     key: "guru_absen",
     label: "Absensi Saya",
     icon: "📍"
+  }, {
+    key: "bimbingan_preview",
+    label: "Jurnal Bimbingan (Preview)",
+    icon: "💬"
   }],
   "Waka Kurikulum": [{
     key: "manajemen",
     label: "Dashboard Eksekutif",
     icon: "📈"
+  }, {
+    key: "bimbingan_preview",
+    label: "Jurnal Bimbingan (Preview)",
+    icon: "💬"
+  }],
+  "Pengawas Sekolah": [{
+    key: "pengawas_7kaih",
+    label: "Program 7 KAIH (Preview)",
+    icon: "🌱"
+  }, {
+    key: "pengawas_jurnal_guru",
+    label: "Monitor Jurnal Mengajar Guru",
+    icon: "📝"
+  }, {
+    key: "pengawas_data_guru",
+    label: "Data Guru (Preview)",
+    icon: "🧑‍🏫"
+  }, {
+    key: "pengawas_data_siswa",
+    label: "Data Siswa (Preview)",
+    icon: "🎓"
   }],
   "Waka Hubmi": [{
     key: "manajemen",
@@ -898,7 +926,12 @@ function PageRouter({
     waka_kesiswaan_absensi: WakaKesiswaanAbsensiModule,
     waka_kesiswaan_poin: WakaKesiswaanPoinModule,
     perpus_scan: PerpusScanModule,
-    kakomli_siswa: KakomliSiswaModule
+    kakomli_siswa: KakomliSiswaModule,
+    bimbingan_preview: JurnalBimbinganPreviewModule,
+    pengawas_7kaih: WakaKesiswaan7KaihModule,
+    pengawas_jurnal_guru: PengawasMonitorJurnalGuruModule,
+    pengawas_data_guru: PengawasDataGuruModule,
+    pengawas_data_siswa: PengawasDataSiswaModule
   };
   const Comp = pages[page];
   return Comp ? /*#__PURE__*/React.createElement(Comp, null) : /*#__PURE__*/React.createElement(Card, null, "Halaman tidak ditemukan.");
@@ -1676,6 +1709,17 @@ function JurnalBimbinganModule() {
   const [riwayat, setRiwayat] = useState([]);
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState("");
+  const [selectedCetak, setSelectedCetak] = useState(null);
+  function handlePrintBimbingan() {
+    const styleTag = document.createElement("style");
+    styleTag.id = "temp-landscape-style-bimbingan";
+    styleTag.innerHTML = "@page { size: A4 portrait; margin: 12mm; }";
+    document.head.appendChild(styleTag);
+    setTimeout(() => {
+      window.print();
+      styleTag.remove();
+    }, 80);
+  }
   useEffect(() => {
     apiCall("getMasterData", {
       scope: "siswa"
@@ -1759,21 +1803,56 @@ function JurnalBimbinganModule() {
   }, "Simpan"))), /*#__PURE__*/React.createElement(Card, {
     title: "Riwayat Jurnal Bimbingan"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "max-h-96 overflow-y-auto divide-y"
+    className: "max-h-96 overflow-y-auto divide-y no-print"
   }, riwayat.map(r => /*#__PURE__*/React.createElement("div", {
     key: r.ID,
     className: "py-2 text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-start justify-between gap-2"
   }, /*#__PURE__*/React.createElement("p", {
     className: "font-medium"
   }, r.Nama_Siswa, " ", /*#__PURE__*/React.createElement("span", {
     className: "text-gray-400 font-normal"
-  }, "· ", r.Tanggal)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement(Badge, {
+  }, "· ", r.Tanggal)), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setSelectedCetak(r)
+  }, "🖨️ Cetak")), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement(Badge, {
     color: "indigo"
   }, r.Aspek_Layanan)), /*#__PURE__*/React.createElement("p", {
     className: "text-gray-600 mt-1"
   }, r.Kegiatan))), riwayat.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-center text-gray-400 py-6"
-  }, "Belum ada riwayat."))));
+  }, "Belum ada riwayat."))), selectedCetak && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "fixed bottom-6 right-6 no-print z-40"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: handlePrintBimbingan
+  }, "🖨️ Cetak Jurnal Ini"), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "ml-2",
+    onClick: () => setSelectedCetak(null)
+  }, "Tutup")), /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "hidden print:block bg-white p-6 mt-4 rounded-xl border"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "text-lg font-bold text-center"
+  }, "JURNAL BIMBINGAN SISWA (WALI KELAS / GURU WALI)"), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-4"
+  }, "Sekolah Menengah Kejuruan"), /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm mb-4"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Nama Siswa"), /*#__PURE__*/React.createElement("td", null, ": ", selectedCetak.Nama_Siswa)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("td", null, ": ", formatTanggalIndo(selectedCetak.Tanggal))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium pr-4"
+  }, "Aspek Capaian Layanan"), /*#__PURE__*/React.createElement("td", null, ": ", selectedCetak.Aspek_Layanan)))), /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, "Kegiatan yang Dilakukan:"), /*#__PURE__*/React.createElement("p", {
+    className: "mb-3"
+  }, selectedCetak.Kegiatan), /*#__PURE__*/React.createElement("div", {
+    className: "print-signature"
+  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, formatTanggalIndo(selectedCetak.Tanggal), /*#__PURE__*/React.createElement("br", null), "Wali Kelas / Guru Wali", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), user.Nama)))));
 }
 
 /* ============================================================================
@@ -1804,7 +1883,7 @@ function AdminModule() {
     tipe: "siswa"
   }));
 }
-const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi", "Waka Kesiswaan", "Waka Sarpras", "Kepala Perpustakaan", "Staf Perpustakaan", "Kepala Kompetensi Keahlian"];
+const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi", "Waka Kesiswaan", "Waka Sarpras", "Kepala Perpustakaan", "Staf Perpustakaan", "Kepala Kompetensi Keahlian", "Pengawas Sekolah"];
 const HARI_LIST = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const JAM_KE_LIST = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -2514,6 +2593,28 @@ function AdminRekapBulananTab({
       if (el) el.setAttribute("style", originalStyle);
     }, 80);
   }
+
+  // Unduh rekap yang sedang tampil sebagai file Excel (.xlsx), memakai library SheetJS
+  function handleExportExcel() {
+    if (!data || !data.data || data.data.length === 0) return;
+    const header = ["No", "Nama", tipe === "guru" ? "NIP" : "NISN", tipe === "guru" ? "Jabatan" : "Kelas"];
+    for (let i = 1; i <= data.jumlahHariDalamBulan; i++) header.push(String(i));
+    header.push("Hari Efektif", "Hadir", "Persentase (%)");
+    const rows = data.data.map((row, idx) => {
+      const arr = [idx + 1, row.Nama, tipe === "guru" ? row.NIP : row.NISN, tipe === "guru" ? row.Jabatan : row.Kelas];
+      row.Harian.forEach(h => arr.push(h.status === "LIBUR" ? "" : h.status === "IN" ? "In" : "X"));
+      arr.push(row.Hari_Efektif, row.Jumlah_Hadir, row.Persentase);
+      return arr;
+    });
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = header.map(() => ({
+      wch: 10
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (tipe === "guru" ? "Absensi Guru" : "Absensi Siswa"));
+    const namaFile = (tipe === "guru" ? "Rekap_Absensi_Guru_" : "Rekap_Absensi_Siswa_") + NAMA_BULAN[bulan - 1] + "_" + tahun + ".xlsx";
+    XLSX.writeFile(wb, namaFile);
+  }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     title: judul + " Bulanan"
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
@@ -2549,7 +2650,11 @@ function AdminRekapBulananTab({
     variant: "secondary",
     className: "no-print",
     onClick: handlePrint
-  }, "🖨️ Cetak ", judul, " (1 Halaman)")), data && /*#__PURE__*/React.createElement("div", {
+  }, "🖨️ Cetak ", judul, " (1 Halaman)"), data && /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "no-print",
+    onClick: handleExportExcel
+  }, "⬇️ Unduh Excel (.xlsx)")), data && /*#__PURE__*/React.createElement("div", {
     className: "overflow-x-auto"
   }, /*#__PURE__*/React.createElement("table", {
     className: "text-xs border-collapse w-full"
@@ -3020,6 +3125,185 @@ function WakaKesiswaanPoinModule() {
   }, s.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, s.Kelas), /*#__PURE__*/React.createElement("td", null, s.jumlahPelanggaran), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
     color: s.totalPoin > 0 ? "red" : "green"
   }, s.totalPoin)))), data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "4",
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada data."))))));
+}
+
+/* ============================================================================
+   MODUL JURNAL BIMBINGAN (PREVIEW) - Kepala Sekolah & Waka Kurikulum
+   Hanya menampilkan tabel preview seluruh jurnal bimbingan dari semua Guru
+   Wali / Wali Kelas. Tidak ada tombol cetak/edit di sini (read-only).
+   ============================================================================ */
+function JurnalBimbinganPreviewModule() {
+  const [data, setData] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getJurnalBimbinganSemua", {}));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Jurnal Bimbingan Seluruh Guru Wali (Preview)",
+    actions: /*#__PURE__*/React.createElement(Button, {
+      variant: "outline",
+      onClick: load
+    }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Muat Ulang")
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Guru Wali"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Aspek Layanan"), /*#__PURE__*/React.createElement("th", null, "Kegiatan"))), /*#__PURE__*/React.createElement("tbody", null, data.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement("td", null, r.Nama_Guru), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, r.Aspek_Layanan)), /*#__PURE__*/React.createElement("td", {
+    className: "max-w-xs truncate"
+  }, r.Kegiatan))), data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "5",
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada data."))))));
+}
+
+/* ============================================================================
+   MODUL PENGAWAS SEKOLAH (SEMUA READ-ONLY / PREVIEW - TIDAK ADA HAK EDIT)
+   ============================================================================ */
+function PengawasMonitorJurnalGuruModule() {
+  const [guruList, setGuruList] = useState([]);
+  const [idGuru, setIdGuru] = useState("");
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    apiCall("getMasterData", {
+      scope: "guru"
+    }).then(setGuruList).catch(e => setError(e.message));
+  }, []);
+  async function load(id) {
+    if (!id) {
+      setList([]);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      setList(await apiCall("getJurnalMengajarByGuru", {
+        ID_Guru: id
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  function handleChange(id) {
+    setIdGuru(id);
+    load(id);
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Monitor Jurnal Mengajar Guru (Preview)",
+    actions: /*#__PURE__*/React.createElement("select", {
+      value: idGuru,
+      onChange: e => handleChange(e.target.value),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Pilih Guru"), guruList.map(g => /*#__PURE__*/React.createElement("option", {
+      key: g.ID,
+      value: g.ID
+    }, g.Nama)))
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), loading && /*#__PURE__*/React.createElement(Spinner, null), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Jam Ke"), /*#__PURE__*/React.createElement("th", null, "Materi"))), /*#__PURE__*/React.createElement("tbody", null, list.map(j => /*#__PURE__*/React.createElement("tr", {
+    key: j.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, formatTanggalIndo(j.Tanggal)), /*#__PURE__*/React.createElement("td", null, j.Kelas), /*#__PURE__*/React.createElement("td", null, j.Mapel), /*#__PURE__*/React.createElement("td", null, j.Jam_Ke), /*#__PURE__*/React.createElement("td", {
+    className: "max-w-xs truncate"
+  }, j.Materi))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "5",
+    className: "text-center text-gray-400 py-6"
+  }, idGuru ? "Belum ada jurnal." : "Pilih guru terlebih dahulu."))))));
+}
+function PengawasDataGuruModule() {
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    apiCall("getMasterData", {
+      scope: "guru"
+    }).then(setList).catch(e => setError(e.message));
+  }, []);
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Data Guru & Pegawai (Preview)"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", null, "NIP"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Role"))), /*#__PURE__*/React.createElement("tbody", null, list.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Mapel_Diampu), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, (u.Roles || []).map(r => /*#__PURE__*/React.createElement(Badge, {
+    key: r,
+    color: "indigo"
+  }, r))))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "5",
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada data."))))));
+}
+function PengawasDataSiswaModule() {
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    apiCall("getMasterData", {
+      scope: "siswa"
+    }).then(setList).catch(e => setError(e.message));
+  }, []);
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Data Siswa (Preview)"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-2"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", null, "NISN"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Guru Wali"))), /*#__PURE__*/React.createElement("tbody", null, list.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-2"
+  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: "4",
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data."))))));
