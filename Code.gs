@@ -35,7 +35,8 @@ const CONFIG = {
   BATAS_ABSEN_MASUK_NORMAL: "12:00",  // batas akhir absen masuk (Senin-Kamis, Sabtu)
   BATAS_ABSEN_MASUK_JUMAT: "11:00",   // batas akhir absen masuk khusus hari Jumat
   JAM_MASUK_STANDAR: "08:00",         // jam masuk normal, dipakai menghitung keterlambatan
-  JAM_MULAI_ABSEN_PULANG: "12:00",    // absen pulang baru bisa dilakukan setelah jam ini
+  JAM_MULAI_ABSEN_PULANG: "12:00",    // absen pulang baru bisa dilakukan setelah jam ini (Senin-Kamis, Sabtu)
+  JAM_MULAI_ABSEN_PULANG_JUMAT: "11:30", // absen pulang baru bisa dilakukan setelah jam ini khusus hari Jumat
 
   // Notifikasi WhatsApp (lihat catatan di fungsi kirimWA - pakai layanan gateway pihak ketiga, cth. Fonnte)
   WA_AKTIF: false,                     // ubah ke true setelah token diisi & sudah siap dipakai
@@ -537,7 +538,7 @@ function apiAbsenGuru(payload) {
   const isJumat = waktu.isoDay === 5;
   const batasMasuk = timeToMinutes(isJumat ? CONFIG.BATAS_ABSEN_MASUK_JUMAT : CONFIG.BATAS_ABSEN_MASUK_NORMAL);
   const jamStandar = timeToMinutes(CONFIG.JAM_MASUK_STANDAR);
-  const batasPulang = timeToMinutes(CONFIG.JAM_MULAI_ABSEN_PULANG);
+  const batasPulang = timeToMinutes(isJumat ? CONFIG.JAM_MULAI_ABSEN_PULANG_JUMAT : CONFIG.JAM_MULAI_ABSEN_PULANG);
 
   const today = formatDateOnly(new Date());
   const now = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "HH:mm:ss");
@@ -548,7 +549,7 @@ function apiAbsenGuru(payload) {
 
   if (payload.tipe === "pulang") {
     if (waktu.menit < batasPulang) {
-      throw new Error("Absen pulang baru bisa dilakukan setelah pukul " + CONFIG.JAM_MULAI_ABSEN_PULANG + ".");
+      throw new Error("Absen pulang baru bisa dilakukan setelah pukul " + (isJumat ? CONFIG.JAM_MULAI_ABSEN_PULANG_JUMAT : CONFIG.JAM_MULAI_ABSEN_PULANG) + (isJumat ? " (hari Jumat)" : "") + ".");
     }
     if (!existing) throw new Error("Anda belum tercatat absen masuk hari ini.");
     updateRowByField(SHEET_NAMES.ABSEN_GURU, "ID", existing.ID, { Jam_Pulang: now });

@@ -154,6 +154,53 @@ function getCurrentPosition() {
   });
 }
 
+// Menampilkan notifikasi kecil (toast) berbahasa Aceh "Teurimong Gaseh" setiap kali
+// absensi (guru maupun siswa) berhasil dicatat.
+function showAcehGreeting(text) {
+  try {
+    let host = document.getElementById("aceh-toast-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "aceh-toast-host";
+      host.style.position = "fixed";
+      host.style.top = "16px";
+      host.style.left = "50%";
+      host.style.transform = "translateX(-50%)";
+      host.style.zIndex = "9999";
+      host.style.display = "flex";
+      host.style.flexDirection = "column";
+      host.style.gap = "8px";
+      host.style.pointerEvents = "none";
+      document.body.appendChild(host);
+    }
+    const toast = document.createElement("div");
+    toast.style.background = "linear-gradient(135deg,#0f766e,#0e7490)";
+    toast.style.color = "#fff";
+    toast.style.padding = "10px 20px";
+    toast.style.borderRadius = "999px";
+    toast.style.boxShadow = "0 8px 20px rgba(0,0,0,0.18)";
+    toast.style.fontWeight = "600";
+    toast.style.fontSize = "14px";
+    toast.style.letterSpacing = "0.2px";
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity .25s ease, transform .25s ease";
+    toast.style.transform = "translateY(-8px)";
+    toast.textContent = "🙏 Teurimong Gaseh — Absensi berhasil disimpan";
+    host.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateY(0)";
+    });
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-8px)";
+      setTimeout(() => toast.remove(), 300);
+    }, 3200);
+  } catch (e) {
+    /* abaikan jika DOM belum siap */
+  }
+}
+
 /* ============================================================================
    KOMPONEN UI DASAR (dipakai ulang di semua modul)
    ============================================================================ */
@@ -298,6 +345,26 @@ function Alert({
   return /*#__PURE__*/React.createElement("div", {
     className: classNames("border rounded-lg px-4 py-2 text-sm mb-3", styles[type])
   }, children);
+}
+
+// Identitas resmi yang dipakai pada seluruh blok tanda tangan cetak jurnal/rekap
+const NAMA_KEPALA_SEKOLAH = "AULYA SIDDIQ, S.Pd.I";
+const TEMPAT_TANDA_TANGAN = "Aceh Barat";
+
+// Blok tanda tangan cetak: kiri selalu Kepala Sekolah, kanan pihak yang membuat jurnal.
+// Lokasi & tanggal kanan mengikuti format "Aceh Barat, [tanggal]".
+function TandaTanganCetak({
+  tanggal,
+  jabatanKanan,
+  namaKanan
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "print-signature"
+  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    className: "font-medium underline"
+  }, NAMA_KEPALA_SEKOLAH)), /*#__PURE__*/React.createElement("div", null, TEMPAT_TANDA_TANGAN, ", ", tanggal, /*#__PURE__*/React.createElement("br", null), jabatanKanan, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    className: "font-medium underline"
+  }, namaKanan)));
 }
 
 // Tombol cetak generik: menampilkan #print-area lalu memicu window.print()
@@ -790,9 +857,9 @@ function LiveClock() {
   return /*#__PURE__*/React.createElement("div", {
     className: "text-right no-print"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "text-lg font-semibold tabular-nums tracking-wide text-primary-700"
+    className: "text-lg font-semibold tabular-nums tracking-wide text-white"
   }, jam, ":", menit, ":", detik), /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-gray-400"
+    className: "text-xs text-primary-100"
   }, tanggal));
 }
 function AppShell() {
@@ -858,34 +925,35 @@ function AppShell() {
   }, "Logout"))), /*#__PURE__*/React.createElement("main", {
     className: "flex-1 flex flex-col min-w-0"
   }, /*#__PURE__*/React.createElement("header", {
-    className: "bg-white border-b px-4 md:px-6 py-3 flex items-center justify-between no-print"
+    className: "bg-primary-900 text-white border-b border-white/10 px-4 md:px-6 py-3 flex items-center justify-between no-print shadow-sm"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-3"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setSidebarOpen(true),
-    className: "md:hidden px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+    className: "md:hidden px-3 py-1.5 rounded-lg border border-white/30 text-white hover:bg-white/10"
   }, "☰"), history.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: goBack,
-    className: "px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+    className: "px-3 py-1.5 rounded-lg border border-white/30 text-sm text-white hover:bg-white/10 flex items-center gap-1"
   }, "← Kembali"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-gray-400 hidden sm:block"
+    className: "text-sm text-primary-100 hidden sm:block"
   }, "Selamat datang,"), /*#__PURE__*/React.createElement("p", {
-    className: "font-semibold"
+    className: "font-semibold text-white"
   }, user.Nama))), /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-4"
   }, effectiveRoles.length > 1 && /*#__PURE__*/React.createElement("div", {
     className: "hidden md:flex items-center gap-2"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "text-xs text-gray-400"
+    className: "text-xs text-primary-100"
   }, "Beralih Dashboard:"), /*#__PURE__*/React.createElement("select", {
     value: activeRole,
     onChange: e => switchRole(e.target.value),
-    className: "border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+    className: "border border-white/30 bg-white/10 text-white rounded-lg px-3 py-1.5 text-sm"
   }, effectiveRoles.map(r => /*#__PURE__*/React.createElement("option", {
     key: r,
-    value: r
+    value: r,
+    className: "text-gray-900"
   }, r)))), /*#__PURE__*/React.createElement(LiveClock, null))), effectiveRoles.length > 1 && /*#__PURE__*/React.createElement("div", {
-    className: "md:hidden bg-white border-b px-4 py-2 no-print"
+    className: "md:hidden bg-primary-900 border-b border-white/10 px-4 py-2 no-print"
   }, /*#__PURE__*/React.createElement("select", {
     value: activeRole,
     onChange: e => switchRole(e.target.value),
@@ -1035,9 +1103,10 @@ function GuruAbsenModule() {
   }, []);
   const isJumat = now.getDay() === 5; // 0=Minggu ... 5=Jumat
   const batasMasukLabel = isJumat ? "11:00" : "12:00";
+  const batasPulangLabel = isJumat ? "11:30" : "12:00";
   const menitSekarang = now.getHours() * 60 + now.getMinutes();
   const batasMasukMenit = isJumat ? 11 * 60 : 12 * 60;
-  const mulaiPulangMenit = 12 * 60;
+  const mulaiPulangMenit = isJumat ? (11 * 60 + 30) : 12 * 60;
   const bisaAbsenMasuk = menitSekarang <= batasMasukMenit;
   const bisaAbsenPulang = menitSekarang >= mulaiPulangMenit;
   async function doAbsen(tipe) {
@@ -1058,6 +1127,7 @@ function GuruAbsenModule() {
       } else {
         setMsg(result.status + " pukul " + result.jam);
       }
+      showAcehGreeting();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1066,7 +1136,7 @@ function GuruAbsenModule() {
   }
   return /*#__PURE__*/React.createElement(Card, {
     title: "Absensi Guru / Pegawai",
-    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari sekolah. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul 12:00."
+    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari sekolah. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
   }, msg), /*#__PURE__*/React.createElement("div", {
@@ -1082,7 +1152,7 @@ function GuruAbsenModule() {
     className: "text-xs text-red-500 mt-2"
   }, "Batas waktu absen masuk (pukul ", batasMasukLabel, ") sudah lewat untuk hari ini."), !bisaAbsenPulang && /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-2"
-  }, "Absen pulang baru bisa dilakukan setelah pukul 12:00."), /*#__PURE__*/React.createElement("p", {
+  }, "Absen pulang baru bisa dilakukan setelah pukul ", batasPulangLabel, "."), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-3"
   }, "Jika Anda berada di luar radius sekolah, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah\"."));
 }
@@ -1362,7 +1432,7 @@ function GuruRiwayatModule() {
     className: "text-lg font-bold text-center"
   }, "JURNAL MENGAJAR GURU"), /*#__PURE__*/React.createElement("p", {
     className: "text-center text-sm mb-4"
-  }, "Sekolah Menengah Kejuruan"), /*#__PURE__*/React.createElement("div", {
+  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-x-8 text-sm mb-4"
   }, /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     className: "font-medium pr-4"
@@ -1406,9 +1476,11 @@ function GuruRiwayatModule() {
   }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, k.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, k.Status))), siswaTidakHadir.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: "3",
     className: "text-center text-gray-400"
-  }, "-")))))), /*#__PURE__*/React.createElement("div", {
-    className: "print-signature"
-  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, formatTanggalIndo(selected.Tanggal), /*#__PURE__*/React.createElement("br", null), "Guru Mata Pelajaran", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), selected.Nama_Guru)))));
+  }, "-")))))), /*#__PURE__*/React.createElement(TandaTanganCetak, {
+    tanggal: formatTanggalIndo(selected.Tanggal),
+    jabatanKanan: "Guru Mata Pelajaran",
+    namaKanan: selected.Nama_Guru
+  }))));
 }
 
 /* ============================================================================
@@ -1447,6 +1519,7 @@ function GuruScanSiswaModule() {
               Nama_Guru: user.Nama
             });
             setResult(res.status + " pukul " + res.jam + (res.tipePoin === "Bonus" ? " (Bonus poin)" : res.tipePoin === "Kurang" ? " (poin pelanggaran berkurang)" : ""));
+            showAcehGreeting();
           } else {
             const res = await apiCall("absenHarianViaQr", {
               QR_Token: decodedText,
@@ -1455,6 +1528,7 @@ function GuruScanSiswaModule() {
               tipe
             });
             setResult(res.status + " pukul " + res.jam);
+            showAcehGreeting();
           }
         } catch (e) {
           setError(e.message);
@@ -1686,9 +1760,11 @@ function WaliKelasModule() {
     className: "text-center text-sm mb-4"
   }, "Kelas ", kelasWali, " · Periode ", startDate, " s.d. ", endDate), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: r.ID_Siswa
-  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Hadir), /*#__PURE__*/React.createElement("td", null, r.Sakit), /*#__PURE__*/React.createElement("td", null, r.Izin), /*#__PURE__*/React.createElement("td", null, r.Alfa))))), /*#__PURE__*/React.createElement("div", {
-    className: "print-signature"
-  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, endDate, /*#__PURE__*/React.createElement("br", null), "Wali Kelas ", kelasWali, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), user.Nama))));
+  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Hadir), /*#__PURE__*/React.createElement("td", null, r.Sakit), /*#__PURE__*/React.createElement("td", null, r.Izin), /*#__PURE__*/React.createElement("td", null, r.Alfa))))), /*#__PURE__*/React.createElement(TandaTanganCetak, {
+    tanggal: endDate,
+    jabatanKanan: "Wali Kelas " + kelasWali,
+    namaKanan: user.Nama
+  })));
 }
 
 /* ============================================================================
@@ -1838,7 +1914,7 @@ function JurnalBimbinganModule() {
     className: "text-lg font-bold text-center"
   }, "JURNAL BIMBINGAN SISWA (WALI KELAS / GURU WALI)"), /*#__PURE__*/React.createElement("p", {
     className: "text-center text-sm mb-4"
-  }, "Sekolah Menengah Kejuruan"), /*#__PURE__*/React.createElement("table", {
+  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("table", {
     className: "w-full text-sm mb-4"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     className: "font-medium pr-4"
@@ -1850,9 +1926,11 @@ function JurnalBimbinganModule() {
     className: "font-medium"
   }, "Kegiatan yang Dilakukan:"), /*#__PURE__*/React.createElement("p", {
     className: "mb-3"
-  }, selectedCetak.Kegiatan), /*#__PURE__*/React.createElement("div", {
-    className: "print-signature"
-  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, formatTanggalIndo(selectedCetak.Tanggal), /*#__PURE__*/React.createElement("br", null), "Wali Kelas / Guru Wali", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), user.Nama)))));
+  }, selectedCetak.Kegiatan), /*#__PURE__*/React.createElement(TandaTanganCetak, {
+    tanggal: formatTanggalIndo(selectedCetak.Tanggal),
+    jabatanKanan: "Wali Kelas / Guru Wali",
+    namaKanan: user.Nama
+  }))));
 }
 
 /* ============================================================================
@@ -2747,9 +2825,11 @@ function AdminRekapBulananTab({
     className: "border px-1 py-1 text-center"
   }, row.Jumlah_Hadir), /*#__PURE__*/React.createElement("td", {
     className: "border px-1 py-1 text-center"
-  }, row.Persentase, "%"))))), /*#__PURE__*/React.createElement("div", {
-    className: "print-signature"
-  }, /*#__PURE__*/React.createElement("div", null, "Mengetahui,", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Kepala Sekolah"), /*#__PURE__*/React.createElement("div", null, formatTanggalIndo(todayStr()), /*#__PURE__*/React.createElement("br", null), "Admin / Tata Usaha", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null)))));
+  }, row.Persentase, "%"))))), /*#__PURE__*/React.createElement(TandaTanganCetak, {
+    tanggal: formatTanggalIndo(todayStr()),
+    jabatanKanan: "Admin / Tata Usaha",
+    namaKanan: ""
+  })));
 }
 
 /* ============================================================================
@@ -3139,6 +3219,7 @@ function JurnalBimbinganPreviewModule() {
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
   async function load() {
     setLoading(true);
     setError("");
@@ -3167,7 +3248,7 @@ function JurnalBimbinganPreviewModule() {
     className: "text-left text-gray-400 border-b"
   }, /*#__PURE__*/React.createElement("th", {
     className: "py-2"
-  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Guru Wali"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Aspek Layanan"), /*#__PURE__*/React.createElement("th", null, "Kegiatan"))), /*#__PURE__*/React.createElement("tbody", null, data.map(r => /*#__PURE__*/React.createElement("tr", {
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Guru Wali"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Aspek Layanan"), /*#__PURE__*/React.createElement("th", null, "Kegiatan"), /*#__PURE__*/React.createElement("th", null, ""))), /*#__PURE__*/React.createElement("tbody", null, data.map(r => /*#__PURE__*/React.createElement("tr", {
     key: r.ID,
     className: "border-b last:border-0"
   }, /*#__PURE__*/React.createElement("td", {
@@ -3176,10 +3257,39 @@ function JurnalBimbinganPreviewModule() {
     color: "indigo"
   }, r.Aspek_Layanan)), /*#__PURE__*/React.createElement("td", {
     className: "max-w-xs truncate"
-  }, r.Kegiatan))), data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: "5",
+  }, r.Kegiatan), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setDetail(r)
+  }, "Lihat Detail")))), data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "6",
     className: "text-center text-gray-400 py-6"
-  }, "Belum ada data."))))));
+  }, "Belum ada data."))))), /*#__PURE__*/React.createElement(Modal, {
+    open: !!detail,
+    onClose: () => setDetail(null),
+    title: "Detail Jurnal Bimbingan"
+  }, detail && /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, "Guru Wali"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, detail.Nama_Guru)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, "Nama Siswa"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, detail.Nama_Siswa)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, formatTanggalIndo(detail.Tanggal))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, "Aspek Capaian Layanan"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, detail.Aspek_Layanan)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, "Kegiatan"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, detail.Kegiatan))))));
 }
 
 /* ============================================================================
@@ -3191,6 +3301,7 @@ function PengawasMonitorJurnalGuruModule() {
   const [list, setList] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
   useEffect(() => {
     apiCall("getMasterData", {
       scope: "guru"
@@ -3237,17 +3348,97 @@ function PengawasMonitorJurnalGuruModule() {
     className: "text-left text-gray-400 border-b"
   }, /*#__PURE__*/React.createElement("th", {
     className: "py-2"
-  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Jam Ke"), /*#__PURE__*/React.createElement("th", null, "Materi"))), /*#__PURE__*/React.createElement("tbody", null, list.map(j => /*#__PURE__*/React.createElement("tr", {
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Kelas"), /*#__PURE__*/React.createElement("th", null, "Mapel"), /*#__PURE__*/React.createElement("th", null, "Jam Ke"), /*#__PURE__*/React.createElement("th", null, "Materi"), /*#__PURE__*/React.createElement("th", null, ""))), /*#__PURE__*/React.createElement("tbody", null, list.map(j => /*#__PURE__*/React.createElement("tr", {
     key: j.ID,
     className: "border-b last:border-0"
   }, /*#__PURE__*/React.createElement("td", {
     className: "py-2"
   }, formatTanggalIndo(j.Tanggal)), /*#__PURE__*/React.createElement("td", null, j.Kelas), /*#__PURE__*/React.createElement("td", null, j.Mapel), /*#__PURE__*/React.createElement("td", null, j.Jam_Ke), /*#__PURE__*/React.createElement("td", {
     className: "max-w-xs truncate"
-  }, j.Materi))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: "5",
+  }, j.Materi), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setDetail(j)
+  }, "Lihat Detail")))), list.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "6",
     className: "text-center text-gray-400 py-6"
-  }, idGuru ? "Belum ada jurnal." : "Pilih guru terlebih dahulu."))))));
+  }, idGuru ? "Belum ada jurnal." : "Pilih guru terlebih dahulu."))))), /*#__PURE__*/React.createElement(Modal, {
+    open: !!detail,
+    onClose: () => setDetail(null),
+    title: "Detail Jurnal Mengajar",
+    wide: true
+  }, detail && /*#__PURE__*/React.createElement(JurnalMengajarDetailView, {
+    j: detail
+  })));
+}
+
+// Menampilkan SELURUH data yang diisi guru pada satu entri Jurnal Mengajar
+// (dipakai pada preview Pengawas/Kepala Sekolah agar tidak ada data yang terpotong)
+function JurnalMengajarDetailView({
+  j
+}) {
+  const kehadiran = safeParseJsonClient(j.Kehadiran_Siswa_JSON || "[]");
+  const hadir = kehadiran.filter(k => k.Status === "Hadir");
+  const tidakHadir = kehadiran.filter(k => k.Status !== "Hadir");
+  const Baris = ({
+    label,
+    value
+  }) => /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "font-medium text-gray-500 align-top pr-4 py-1 whitespace-nowrap"
+  }, label), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, value || "-"));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full mb-4"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement(Baris, {
+    label: "Guru",
+    value: j.Nama_Guru
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Hari / Tanggal",
+    value: (j.Hari ? j.Hari + ", " : "") + formatTanggalIndo(j.Tanggal)
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Kelas / Mapel",
+    value: j.Kelas + " / " + j.Mapel
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Jam Ke",
+    value: j.Jam_Ke
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Pertemuan Ke",
+    value: j.Pertemuan_Ke
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Tujuan Pembelajaran",
+    value: j.Tujuan_Pembelajaran
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Materi",
+    value: j.Materi
+  }), /*#__PURE__*/React.createElement(Baris, {
+    label: "Catatan Kelas",
+    value: j.Catatan_Kelas
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "grid md:grid-cols-2 gap-4 mb-4"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium mb-1"
+  }, "Siswa Hadir (", hadir.length, ")"), /*#__PURE__*/React.createElement("ul", {
+    className: "list-disc list-inside text-gray-600 max-h-48 overflow-y-auto"
+  }, hadir.map((k, i) => /*#__PURE__*/React.createElement("li", {
+    key: i
+  }, k.Nama_Siswa)), hadir.length === 0 && /*#__PURE__*/React.createElement("li", {
+    className: "text-gray-300 list-none"
+  }, "-"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium mb-1"
+  }, "Siswa Tidak Hadir (", tidakHadir.length, ")"), /*#__PURE__*/React.createElement("ul", {
+    className: "list-disc list-inside text-gray-600 max-h-48 overflow-y-auto"
+  }, tidakHadir.map((k, i) => /*#__PURE__*/React.createElement("li", {
+    key: i
+  }, k.Nama_Siswa, " — ", k.Status)), tidakHadir.length === 0 && /*#__PURE__*/React.createElement("li", {
+    className: "text-gray-300 list-none"
+  }, "-")))), j.Foto_URL && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium mb-1"
+  }, "Dokumentasi Foto"), /*#__PURE__*/React.createElement("img", {
+    src: j.Foto_URL,
+    className: "rounded-lg border max-h-64"
+  })));
 }
 function PengawasDataGuruModule() {
   const [list, setList] = useState([]);
@@ -3418,6 +3609,44 @@ function KakomliSiswaModule() {
 /* ============================================================================
    MODUL SISWA REGULER
    ============================================================================ */
+// Versi ringkas MyQrCode untuk ditempel langsung di dalam desain Kartu Pelajar /
+// Kartu Perpustakaan (tanpa bingkai kartu putih & teks instruksi tambahan).
+function InlineQrCode({
+  idSiswa,
+  size = 76
+}) {
+  const boxRef = useRef(null);
+  const [kode, setKode] = useState(null);
+  useEffect(() => {
+    apiCall("getKodeQrHarianSiswa", {
+      ID_Siswa: idSiswa
+    }).then(res => setKode(res.kode)).catch(() => {});
+  }, [idSiswa]);
+  useEffect(() => {
+    if (boxRef.current && window.QRCode && kode) {
+      boxRef.current.innerHTML = "";
+      new window.QRCode(boxRef.current, {
+        text: kode,
+        width: size,
+        height: size,
+        colorDark: "#111827",
+        colorLight: "#ffffff"
+      });
+    }
+  }, [kode]);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "bg-white p-1 rounded-md shrink-0",
+    style: {
+      width: size + 8,
+      height: size + 8
+    }
+  }, kode ? /*#__PURE__*/React.createElement("div", {
+    ref: boxRef
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "w-full h-full flex items-center justify-center text-[8px] text-gray-300"
+  }, "QR"));
+}
+
 // Kartu identitas siswa (format kartu pelajar formal) - dipakai di dashboard siswa
 function KartuSiswa({
   user,
@@ -3425,20 +3654,29 @@ function KartuSiswa({
 }) {
   const kompetensi = String(user.Kelas_Diampu || "").indexOf("ATU") !== -1 ? "Agribisnis Ternak Unggas" : "Bisnis Digital";
   return /*#__PURE__*/React.createElement("div", {
-    className: "rounded-xl overflow-hidden shadow-md border border-gray-200 bg-white max-w-sm mx-auto"
+    className: "rounded-2xl overflow-hidden shadow-lg border border-gray-200 bg-white max-w-sm mx-auto relative"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-primary-700 to-primary-900 text-white px-4 py-3 flex items-center gap-2"
-  }, /*#__PURE__*/React.createElement(LogoMark, {
-    size: 28
-  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
-    className: "text-xs font-semibold leading-tight"
+    className: "bg-gradient-to-r from-primary-700 via-primary-800 to-primary-900 text-white px-4 py-3 flex items-center gap-2 relative overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "absolute right-8 bottom-0 w-16 h-16 rounded-full bg-accent/20"
+  }), /*#__PURE__*/React.createElement(LogoMark, {
+    size: 32
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-sm font-bold leading-tight tracking-wide"
   }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-primary-100"
+    className: "text-[10px] text-primary-100 tracking-widest"
   }, "KARTU TANDA PELAJAR"))), /*#__PURE__*/React.createElement("div", {
     className: "p-4 flex gap-3"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "w-16 h-20 bg-gray-100 rounded border flex items-center justify-center text-2xl text-gray-300 shrink-0"
-  }, "👤"), /*#__PURE__*/React.createElement("table", {
+    className: "w-16 h-20 bg-gray-100 rounded border flex items-center justify-center text-2xl text-gray-300 shrink-0 overflow-hidden"
+  }, user.Foto_URL ? /*#__PURE__*/React.createElement("img", {
+    src: user.Foto_URL,
+    className: "w-full h-full object-cover"
+  }) : "👤"), /*#__PURE__*/React.createElement("table", {
     className: "text-xs w-full"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     className: "text-gray-400 pr-2 align-top"
@@ -3455,14 +3693,23 @@ function KartuSiswa({
   }, "Komp. Keahlian"), /*#__PURE__*/React.createElement("td", null, kompetensi)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     className: "text-gray-400 pr-2 align-top"
   }, "Alamat"), /*#__PURE__*/React.createElement("td", null, user.Alamat_Siswa || "-"))))), /*#__PURE__*/React.createElement("div", {
-    className: "px-4 pb-4 flex justify-end"
+    className: "px-4 pb-4 flex items-end justify-between gap-3 border-t pt-3"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(InlineQrCode, {
+    idSiswa: user.ID,
+    size: 60
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-[9px] text-gray-400 max-w-[80px] leading-tight"
+  }, "Scan untuk absen gerbang & perpustakaan")), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-xs"
   }, /*#__PURE__*/React.createElement("p", {
     className: "text-gray-400 mb-6"
   }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
     className: "font-semibold border-t pt-1"
-  }, namaKepsek || "-"))));
+  }, namaKepsek || NAMA_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
+    className: "h-2 bg-gradient-to-r from-accent via-primary-600 to-primary-900"
+  }));
 }
 
 // Kartu anggota perpustakaan - dipakai di dashboard siswa
@@ -3470,17 +3717,21 @@ function KartuPerpustakaan({
   user
 }) {
   return /*#__PURE__*/React.createElement("div", {
-    className: "rounded-xl overflow-hidden shadow-md border border-gray-200 bg-white max-w-sm mx-auto"
+    className: "rounded-2xl overflow-hidden shadow-lg border border-gray-200 bg-white max-w-sm mx-auto"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-secondary-600 to-emerald-800 text-white px-4 py-3 flex items-center gap-2"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "text-xl"
-  }, "📚"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
-    className: "text-xs font-semibold leading-tight"
+    className: "bg-gradient-to-r from-secondary-600 via-emerald-700 to-emerald-800 text-white px-4 py-3 flex items-center gap-2 relative overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "text-xl relative"
+  }, "📚"), /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs font-bold leading-tight"
   }, "PERPUSTAKAAN SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-emerald-100"
+    className: "text-[10px] text-emerald-100 tracking-widest"
   }, "KARTU ANGGOTA PERPUSTAKAAN"))), /*#__PURE__*/React.createElement("div", {
-    className: "p-4 text-xs"
+    className: "p-4 text-xs flex gap-3"
   }, /*#__PURE__*/React.createElement("table", {
     className: "w-full"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -3495,9 +3746,16 @@ function KartuPerpustakaan({
     className: "text-gray-400 pr-2 align-top"
   }, "Status"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
     color: "green"
-  }, "Anggota Aktif"))))), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-gray-400 mt-3"
-  }, "Tunjukkan QR pada kartu ini / menu Beranda untuk absen kunjungan perpustakaan.")));
+  }, "Anggota Aktif")))))), /*#__PURE__*/React.createElement("div", {
+    className: "px-4 pb-4 flex items-center justify-between gap-3 border-t pt-3"
+  }, /*#__PURE__*/React.createElement(InlineQrCode, {
+    idSiswa: user.ID,
+    size: 64
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-[9px] text-gray-400 max-w-[180px] leading-tight text-right"
+  }, "Tunjukkan QR pada kartu ini untuk absen kunjungan perpustakaan.")), /*#__PURE__*/React.createElement("div", {
+    className: "h-2 bg-gradient-to-r from-emerald-400 via-secondary-600 to-emerald-800"
+  }));
 }
 function SiswaHomeModule() {
   const {
@@ -3539,17 +3797,12 @@ function SiswaHomeModule() {
     user: user,
     namaKepsek: namaKepsek
   })), /*#__PURE__*/React.createElement(Card, {
-    title: "Kartu Perpustakaan & QR Absensi"
+    title: "Kartu Perpustakaan"
   }, /*#__PURE__*/React.createElement(KartuPerpustakaan, {
     user: user
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "text-center mt-4"
-  }, /*#__PURE__*/React.createElement(MyQrCode, {
-    idSiswa: user.ID,
-    size: 140
   }), /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-gray-400 mt-2"
-  }, "QR ini dipakai untuk absen gerbang, kunjungan perpustakaan, dan Literasi Al-Qur'an (Jumat)."))), /*#__PURE__*/React.createElement(Card, {
+    className: "text-xs text-gray-400 mt-3 text-center"
+  }, "QR pada kedua kartu di atas dipakai untuk absen gerbang, kunjungan perpustakaan, dan Literasi Al-Qur'an (Jumat).")), /*#__PURE__*/React.createElement(Card, {
     title: "Rekap Kehadiran per Mata Pelajaran"
   }, /*#__PURE__*/React.createElement("div", {
     className: "space-y-2"
@@ -3609,6 +3862,7 @@ function SiswaAbsenQrModule() {
             Nama_Siswa: user.Nama
           });
           setResult(res.status);
+          showAcehGreeting();
         } catch (e) {
           setError(e.message);
         }
