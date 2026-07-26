@@ -26,6 +26,8 @@
 const CONFIG = {
   SCHOOL_LAT: 4.391054,      // Ganti dengan koordinat sekolah Anda
   SCHOOL_LNG: 96.040818,      // Ganti dengan koordinat sekolah Anda
+  CABANG_DINAS_LAT: 4.176717348593045,  // Koordinat Cabang Dinas Pendidikan (lokasi alternatif absen guru)
+  CABANG_DINAS_LNG: 96.13676851392087,
   RADIUS_GURU_METER: 500,
   RADIUS_PKL_METER: 100,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
@@ -46,7 +48,9 @@ const CONFIG = {
 
   POIN_KURANG_KUNJUNGAN_PERPUS: 5, // poin pelanggaran berkurang/bonus otomatis per kunjungan perpustakaan (maks 1x/hari)
   HARI_LITERASI_QURAN: "Jumat",
-  POIN_KURANG_LITERASI_QURAN: 5 // poin pelanggaran berkurang/bonus otomatis per kehadiran Literasi Al-Qur'an (maks 1x/hari, hanya hari Jumat)
+  POIN_KURANG_LITERASI_QURAN: 5, // poin pelanggaran berkurang/bonus otomatis per kehadiran Literasi Al-Qur'an (maks 1x/hari, hanya hari Jumat)
+
+  NIP_KEPALA_SEKOLAH: "198702062011031002" // NIP Kepala Sekolah, ditampilkan di blok tanda tangan cetak
 };
 
 // ============================================================================
@@ -79,6 +83,13 @@ function cariPelanggaranByKode(kode) {
   return DAFTAR_PELANGGARAN.find(function (p) { return p.kode === kode; }) || null;
 }
 
+// Guru_Pembimbing_PKL disimpan sebagai teks dipisah koma (mendukung lebih dari
+// satu guru pembimbing untuk satu siswa PKL). Helper ini mem-parsing jadi array
+// nama yang sudah di-trim, membuang entri kosong.
+function parseNamaGuruList(str) {
+  return String(str || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+}
+
 const SHEET_NAMES = {
   USERS: "Users_Master",
   ABSEN_GURU: "Absen_Guru",
@@ -93,7 +104,8 @@ const SHEET_NAMES = {
   JURNAL_MGMP: "Jurnal_MGMP",
   POIN_PELANGGARAN: "Poin_Pelanggaran_Siswa",
   ABSEN_PERPUSTAKAAN: "Absen_Perpustakaan",
-  ABSEN_LITERASI_QURAN: "Absen_Literasi_Quran"
+  ABSEN_LITERASI_QURAN: "Absen_Literasi_Quran",
+  DOKUMEN_SEKOLAH: "Dokumen_Sekolah"
 };
 
 // Definisi header setiap sheet. setupDatabase() akan membuat sheet + header
@@ -110,7 +122,7 @@ const SHEET_SCHEMAS = {
   ],
   Absen_Guru: [
     "ID", "ID_Guru", "Nama_Guru", "Tanggal", "Jam_Masuk", "Jam_Pulang",
-    "Lat", "Long", "Status", "Keterangan", "CreatedAt"
+    "Lat", "Long", "Lokasi_Absen", "Status", "Keterangan", "CreatedAt"
   ],
   Absen_Siswa_Reguler: [
     "ID", "ID_Siswa", "Nama_Siswa", "Kelas", "Tanggal", "Jam",
@@ -126,7 +138,7 @@ const SHEET_SCHEMAS = {
     "Kehadiran_Siswa_JSON", "Foto_URL", "CreatedAt"
   ],
   Jurnal_Bimbingan: [
-    "ID", "ID_Guru", "Nama_Guru", "ID_Siswa", "Nama_Siswa", "Tanggal",
+    "ID", "ID_Guru", "Nama_Guru", "NIP_Guru", "ID_Siswa", "Nama_Siswa", "Tanggal",
     "Aspek_Layanan", "Kegiatan", "CreatedAt"
   ],
   Jurnal_7KAIH: [
@@ -164,6 +176,9 @@ const SHEET_SCHEMAS = {
   ],
   Absen_Literasi_Quran: [
     "ID", "ID_Siswa", "Nama_Siswa", "Kelas", "Tanggal", "Jam", "ID_Guru", "Nama_Guru", "CreatedAt"
+  ],
+  Dokumen_Sekolah: [
+    "ID", "Judul", "Deskripsi", "Kategori", "URL", "ID_Pengunggah", "Nama_Pengunggah", "CreatedAt"
   ]
 };
 
@@ -254,6 +269,11 @@ function doPost(e) {
     getInfoPklSiswa: apiGetInfoPklSiswa,
     saveJurnalPkl: apiSaveJurnalPkl,
     absenPkl: apiAbsenPkl,
+    getJurnalPklMonitoring: apiGetJurnalPklMonitoring,
+    getRekapKehadiranPkl: apiGetRekapKehadiranPkl,
+    getDokumenSekolah: apiGetDokumenSekolah,
+    saveDokumenSekolah: apiSaveDokumenSekolah,
+    deleteDokumenSekolah: apiDeleteDokumenSekolah,
 
     saveJurnal7Kaih: apiSaveJurnal7Kaih,
     getJurnal7KaihBySiswa: apiGetJurnal7KaihBySiswa,
@@ -278,6 +298,7 @@ function doPost(e) {
 
     getRekapAbsensiGuruBulanan: apiGetRekapAbsensiGuruBulanan,
     getRekapAbsensiSiswaBulanan: apiGetRekapAbsensiSiswaBulanan,
+    getRekapKehadiranPerKelas: apiGetRekapKehadiranPerKelas,
 
     absenPerpustakaan: apiAbsenPerpustakaan,
     absenLiterasiQuran: apiAbsenLiterasiQuran,
@@ -289,6 +310,7 @@ function doPost(e) {
     getPoinPelanggaranSemua: apiGetPoinPelanggaranSemua,
 
     getJurnal7KaihSemuaSiswa: apiGetJurnal7KaihSemuaSiswa,
+    getJurnal7KaihByGuruWali: apiGetJurnal7KaihByGuruWali,
     getSiswaKompetensiKeahlian: apiGetSiswaKompetensiKeahlian,
 
     uploadPhoto: apiUploadPhoto
@@ -462,6 +484,11 @@ function apiLogin(payload) {
   const safeUser = Object.assign({}, user);
   delete safeUser.Password;
   safeUser.Roles = roles;
+  // Dipakai frontend untuk menampilkan menu "Monitoring Jurnal PKL" hanya jika
+  // guru ybs memang ditunjuk sebagai pembimbing PKL untuk minimal 1 siswa.
+  safeUser.Is_Pembimbing_PKL = users.some(function (u) {
+    return parseNamaGuruList(u.Guru_Pembimbing_PKL).indexOf(user.Nama) !== -1;
+  });
   return safeUser;
 }
 
@@ -529,10 +556,15 @@ function getWaktuSekarang() {
 }
 
 function apiAbsenGuru(payload) {
-  const jarak = haversineMeters(CONFIG.SCHOOL_LAT, CONFIG.SCHOOL_LNG, payload.Lat, payload.Long);
-  if (jarak > CONFIG.RADIUS_GURU_METER) {
-    throw new Error("Anda Berada Diluar Radius Sekolah (jarak " + Math.round(jarak) + " m, maksimal " + CONFIG.RADIUS_GURU_METER + " m).");
+  const jarakSekolah = haversineMeters(CONFIG.SCHOOL_LAT, CONFIG.SCHOOL_LNG, payload.Lat, payload.Long);
+  const jarakCabangDinas = haversineMeters(CONFIG.CABANG_DINAS_LAT, CONFIG.CABANG_DINAS_LNG, payload.Lat, payload.Long);
+  const diSekolah = jarakSekolah <= CONFIG.RADIUS_GURU_METER;
+  const diCabangDinas = jarakCabangDinas <= CONFIG.RADIUS_GURU_METER;
+  if (!diSekolah && !diCabangDinas) {
+    throw new Error("Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan (jarak ke sekolah " + Math.round(jarakSekolah) + " m, jarak ke Cabang Dinas Pendidikan " + Math.round(jarakCabangDinas) + " m, maksimal " + CONFIG.RADIUS_GURU_METER + " m).");
   }
+  const lokasiAbsen = diSekolah && jarakSekolah <= jarakCabangDinas ? "Sekolah" : "Cabang Dinas Pendidikan";
+  const jarak = diSekolah && jarakSekolah <= jarakCabangDinas ? jarakSekolah : jarakCabangDinas;
 
   const waktu = getWaktuSekarang();
   const isJumat = waktu.isoDay === 5;
@@ -553,7 +585,7 @@ function apiAbsenGuru(payload) {
     }
     if (!existing) throw new Error("Anda belum tercatat absen masuk hari ini.");
     updateRowByField(SHEET_NAMES.ABSEN_GURU, "ID", existing.ID, { Jam_Pulang: now });
-    return { status: "Absen pulang tercatat", jam: now, telatMenit: 0 };
+    return { status: "Absen pulang tercatat (" + lokasiAbsen + ")", jam: now, telatMenit: 0, lokasiAbsen: lokasiAbsen };
   }
 
   if (waktu.menit > batasMasuk) {
@@ -574,12 +606,13 @@ function apiAbsenGuru(payload) {
     Jam_Pulang: "",
     Lat: payload.Lat,
     Long: payload.Long,
+    Lokasi_Absen: lokasiAbsen,
     Status: "Hadir",
     Keterangan: telatMenit > 0 ? ("Telat " + telatMenit + " menit") : "",
     CreatedAt: new Date()
   };
   appendRowFromObject(SHEET_NAMES.ABSEN_GURU, obj);
-  return { status: "Absen masuk tercatat", jam: now, telatMenit: telatMenit };
+  return { status: "Absen masuk tercatat (" + lokasiAbsen + ")", jam: now, telatMenit: telatMenit, lokasiAbsen: lokasiAbsen };
 }
 
 function apiGetRiwayatAbsenGuru(payload) {
@@ -830,6 +863,93 @@ function apiAbsenPkl(payload) {
 }
 
 // ============================================================================
+// MONITORING JURNAL PKL BERJENJANG
+// (Guru Pembimbing PKL -> siswa bimbingannya saja | Waka Hubmi -> semua siswa
+//  PKL | Ketua Kompetensi Keahlian -> hanya kompetensi keahliannya sendiri)
+// ============================================================================
+
+// Menentukan cakupan siswa kelas XII (PKL) sesuai payload filter:
+// { ID_Guru (opsional, guru pembimbing PKL tsb) } dan/atau { Kompetensi (opsional) }
+function resolveSiswaPklScope(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  let siswaXII = users.filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && String(u.Kelas_Diampu || "").indexOf("XII") !== -1;
+  });
+
+  let namaGuruPembimbing = null;
+  if (payload && payload.ID_Guru) {
+    const guru = users.find(function (u) { return u.ID === payload.ID_Guru; });
+    if (!guru) throw new Error("Data guru tidak ditemukan.");
+    namaGuruPembimbing = guru.Nama;
+    siswaXII = siswaXII.filter(function (s) { return parseNamaGuruList(s.Guru_Pembimbing_PKL).indexOf(namaGuruPembimbing) !== -1; });
+  }
+  if (payload && payload.Kompetensi) {
+    siswaXII = siswaXII.filter(function (s) { return String(s.Kelas_Diampu || "").indexOf(payload.Kompetensi) !== -1; });
+  }
+  return { siswaXII: siswaXII, namaGuruPembimbing: namaGuruPembimbing };
+}
+
+// payload: { ID_Guru (opsional), Kompetensi (opsional) } -> seluruh isian
+// Jurnal Harian PKL siswa dalam cakupan tsb (dipakai untuk monitoring, read-only)
+function apiGetJurnalPklMonitoring(payload) {
+  const scope = resolveSiswaPklScope(payload || {});
+  const siswaMap = {};
+  scope.siswaXII.forEach(function (s) { siswaMap[s.ID] = s; });
+
+  const jurnal = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL)
+    .filter(function (r) { return siswaMap[r.ID_Siswa]; })
+    .map(function (r) {
+      const s = siswaMap[r.ID_Siswa];
+      r.Kelas = s.Kelas_Diampu;
+      r.Tempat_PKL = s.Tempat_PKL;
+      r.Guru_Pembimbing_PKL = s.Guru_Pembimbing_PKL;
+      return r;
+    })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  return {
+    Daftar_Siswa: scope.siswaXII.map(function (s) {
+      return { ID: s.ID, Nama: s.Nama, Kelas: s.Kelas_Diampu, Tempat_PKL: s.Tempat_PKL, Guru_Pembimbing_PKL: s.Guru_Pembimbing_PKL };
+    }),
+    Jurnal: jurnal
+  };
+}
+
+// payload: { ID_Guru (opsional), Kompetensi (opsional), startDate, endDate (opsional) }
+// -> rekap kehadiran PKL per siswa dalam cakupan tsb, untuk dicetak dalam bentuk tabel
+function apiGetRekapKehadiranPkl(payload) {
+  const scope = resolveSiswaPklScope(payload || {});
+  const semuaJurnal = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL);
+
+  const rows = scope.siswaXII.map(function (siswa) {
+    let riwayat = semuaJurnal.filter(function (r) { return r.ID_Siswa === siswa.ID; });
+    if (payload && payload.startDate && payload.endDate) {
+      const startT = new Date(payload.startDate).getTime();
+      const endT = new Date(payload.endDate).getTime();
+      riwayat = riwayat.filter(function (r) {
+        const t = new Date(r.Tanggal).getTime();
+        return t >= startT && t <= endT;
+      });
+    }
+    riwayat = riwayat.sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
+    return {
+      ID_Siswa: siswa.ID,
+      Nama_Siswa: siswa.Nama,
+      NISN: siswa.Identitas_NIP_NISN,
+      Kelas: siswa.Kelas_Diampu,
+      Tempat_PKL: siswa.Tempat_PKL,
+      Guru_Pembimbing_PKL: siswa.Guru_Pembimbing_PKL,
+      Jumlah_Hadir: riwayat.filter(function (r) { return r.Status === "Hadir"; }).length,
+      Jumlah_Jurnal_Terisi: riwayat.length,
+      Detail_Harian: riwayat.map(function (r) { return { Tanggal: r.Tanggal, Jam: r.Jam, Status: r.Status }; })
+    };
+  });
+
+  rows.sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama_Siswa.localeCompare(b.Nama_Siswa); });
+  return { namaGuruPembimbing: scope.namaGuruPembimbing, data: rows };
+}
+
+// ============================================================================
 // MODUL D: JURNAL KARAKTER 7KAIH (SEMUA SISWA)
 // ============================================================================
 
@@ -865,9 +985,29 @@ function apiGetJurnal7KaihBySiswa(payload) {
 // MODUL E: JURNAL BIMBINGAN (GURU WALI / WALI KELAS) - 11 ASPEK
 // ============================================================================
 
+// Guru wali/wali kelas HANYA boleh mengisi jurnal bimbingan untuk siswa yang
+// benar-benar menjadi bimbingannya (Guru_Wali_Nama siswa = nama guru tsb, atau
+// siswa berada di Kelas_Wali guru tsb). Validasi dilakukan di server supaya
+// data yang tampil di preview Kepala Sekolah/Waka Kurikulum/Waka Kesiswaan/
+// Pengawas selalu konsisten antara nama siswa dan guru walinya.
 function apiSaveJurnalBimbingan(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const guru = users.find(function (u) { return u.ID === payload.ID_Guru; });
+  if (!guru) throw new Error("Data guru tidak ditemukan.");
+  const siswa = users.find(function (u) { return u.ID === payload.ID_Siswa; });
+  if (!siswa) throw new Error("Data siswa tidak ditemukan.");
+
+  const kelasWaliGuru = (guru.Kelas_Wali || "").trim();
+  const isWaliSiswaIni = siswa.Guru_Wali_Nama === guru.Nama || (kelasWaliGuru && siswa.Kelas_Diampu === kelasWaliGuru);
+  if (!isWaliSiswaIni) {
+    throw new Error("Siswa ini bukan bimbingan Anda. Jurnal bimbingan hanya bisa diisi untuk siswa yang guru walinya adalah Anda.");
+  }
+
   const obj = Object.assign({}, payload);
   obj.ID = generateId("BMB");
+  obj.Nama_Guru = guru.Nama;
+  obj.Nama_Siswa = siswa.Nama;
+  obj.NIP_Guru = guru.Identitas_NIP_NISN;
   obj.CreatedAt = new Date();
   appendRowFromObject(SHEET_NAMES.JURNAL_BIMBINGAN, obj);
   return obj;
@@ -1056,8 +1196,42 @@ function apiGetJurnal7KaihSemuaSiswa(payload) {
 
   return readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH)
     .filter(function (r) { return userMap[r.ID_Siswa]; })
-    .map(function (r) { r.Kelas = userMap[r.ID_Siswa].Kelas_Diampu; return r; })
+    .map(function (r) {
+      r.Kelas = userMap[r.ID_Siswa].Kelas_Diampu;
+      r.Olahraga_Kegiatan = safeParseJson(r.Olahraga_Kegiatan_JSON);
+      return r;
+    })
     .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+}
+
+// payload: { ID_Guru } -> Jurnal 7KAIH seluruh siswa yang Guru_Wali_Nama-nya
+// adalah guru wali tsb (dipakai di akun Guru Wali). Data dipilah lengkap per
+// 7 kebiasaan agar bisa ditampilkan sebagai tabel dan diunduh.
+function apiGetJurnal7KaihByGuruWali(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const guru = users.find(function (u) { return u.ID === payload.ID_Guru; });
+  if (!guru) throw new Error("Data guru tidak ditemukan.");
+
+  const siswaBimbingan = users.filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Guru_Wali_Nama === guru.Nama;
+  });
+  const siswaMap = {};
+  siswaBimbingan.forEach(function (s) { siswaMap[s.ID] = s; });
+
+  const rows = readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH)
+    .filter(function (r) { return siswaMap[r.ID_Siswa]; })
+    .map(function (r) {
+      r.Kelas = siswaMap[r.ID_Siswa].Kelas_Diampu;
+      r.Olahraga_Kegiatan = safeParseJson(r.Olahraga_Kegiatan_JSON);
+      return r;
+    })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  return {
+    Nama_Guru_Wali: guru.Nama,
+    Daftar_Siswa: siswaBimbingan.map(function (s) { return { ID: s.ID, Nama: s.Nama, Kelas: s.Kelas_Diampu }; }),
+    Jurnal: rows
+  };
 }
 
 // ============================================================================
@@ -1096,7 +1270,38 @@ function apiGetSiswaKompetensiKeahlian(payload) {
 }
 
 // ============================================================================
-// ABSEN HARIAN SISWA VIA QR PRIBADI (discan oleh akun Guru/Tata Usaha)
+// DOKUMEN SEKOLAH (link dokumen diunggah oleh Admin, bisa dilihat/diunduh
+// oleh Guru, Kepala Sekolah, Pengawas Sekolah, dan Tata Usaha)
+// ============================================================================
+
+function apiGetDokumenSekolah() {
+  return readSheetAsObjects(SHEET_NAMES.DOKUMEN_SEKOLAH)
+    .sort(function (a, b) { return new Date(b.CreatedAt) - new Date(a.CreatedAt); });
+}
+
+// payload = { ID (opsional, isi jika edit), Judul, Deskripsi, Kategori, URL, ID_Admin, Nama_Admin }
+function apiSaveDokumenSekolah(payload) {
+  const obj = Object.assign({}, payload);
+  obj.ID_Pengunggah = payload.ID_Admin || payload.ID_Pengunggah;
+  obj.Nama_Pengunggah = payload.Nama_Admin || payload.Nama_Pengunggah;
+  delete obj.ID_Admin;
+  delete obj.Nama_Admin;
+  if (obj.ID) {
+    updateRowByField(SHEET_NAMES.DOKUMEN_SEKOLAH, "ID", obj.ID, obj);
+    return obj;
+  }
+  obj.ID = generateId("DOK");
+  obj.CreatedAt = new Date();
+  appendRowFromObject(SHEET_NAMES.DOKUMEN_SEKOLAH, obj);
+  return obj;
+}
+
+function apiDeleteDokumenSekolah(payload) {
+  deleteRowByField(SHEET_NAMES.DOKUMEN_SEKOLAH, "ID", payload.ID);
+  return { status: "Dokumen dihapus." };
+}
+
+// ============================================================================
 // ============================================================================
 // Catatan: kolom "QR_Token" di Users_Master adalah kode QR TETAP milik siswa
 // (dibuat sekali saat data siswa disimpan, tidak pernah berubah). QR yang
@@ -1559,6 +1764,34 @@ function apiGetRekapAbsensiSiswaBulanan(payload) {
   rows.sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama.localeCompare(b.Nama); });
 
   return { bulan: bulan, tahun: tahun, jumlahHariDalamBulan: jumlahHari, hariEfektif: hariEfektif.length, data: rows };
+}
+
+// payload: { bulan, tahun } -> rekap kehadiran siswa DIPILAH PER KELAS, tiap
+// kelas menampilkan siswa yang paling banyak hadir & paling banyak tidak
+// hadir. Dipakai bersama oleh Kepala Sekolah, Waka Kurikulum, dan Waka Kesiswaan.
+function apiGetRekapKehadiranPerKelas(payload) {
+  const rekap = apiGetRekapAbsensiSiswaBulanan({ bulan: payload.bulan, tahun: payload.tahun });
+  const perKelas = {};
+  rekap.data.forEach(function (s) {
+    const kelas = s.Kelas || "(Tanpa Kelas)";
+    perKelas[kelas] = perKelas[kelas] || [];
+    perKelas[kelas].push(s);
+  });
+
+  const kelasList = Object.keys(perKelas).sort().map(function (kelas) {
+    const siswa = perKelas[kelas].slice().sort(function (a, b) { return b.Persentase - a.Persentase; });
+    const totalPersen = siswa.reduce(function (sum, s) { return sum + s.Persentase; }, 0);
+    return {
+      Kelas: kelas,
+      Jumlah_Siswa: siswa.length,
+      Rata_Rata_Persentase: siswa.length ? Math.round(totalPersen / siswa.length) : 0,
+      Siswa_Paling_Hadir: siswa.length ? siswa[0] : null,
+      Siswa_Paling_Tidak_Hadir: siswa.length ? siswa[siswa.length - 1] : null,
+      Siswa: siswa
+    };
+  });
+
+  return { bulan: rekap.bulan, tahun: rekap.tahun, hariEfektif: rekap.hariEfektif, kelasList: kelasList };
 }
 
 
