@@ -1449,6 +1449,120 @@ function GuruJurnalModule() {
     disabled: loading
   }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Jurnal")));
 }
+// Cetak Absensi Siswa berdasarkan Mata Pelajaran yang diampu guru ybs.
+// Data diambil dari Absen_Siswa_Reguler yang otomatis tersinkron setiap kali
+// guru mengisi Jurnal Mengajar (checklist kehadiran per pertemuan).
+function CetakAbsensiMapelPanel({
+  user,
+  printAreaId = "print-area"
+}) {
+  const mapelList = (user.Mapel_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const kelasList = (user.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const [mapel, setMapel] = useState(mapelList[0] || "");
+  const [kelas, setKelas] = useState(kelasList[0] || "");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    if (!mapel || !kelas) return;
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getAbsensiMapelByGuru", {
+        ID_Guru: user.ID,
+        Mapel: mapel,
+        Kelas: kelas
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [mapel, kelas]);
+  function handlePrint() {
+    const styleTag = document.createElement("style");
+    styleTag.id = "temp-landscape-style-absensi-mapel";
+    styleTag.innerHTML = "@page { size: A4 landscape; margin: 10mm; }";
+    document.head.appendChild(styleTag);
+    setTimeout(() => {
+      window.print();
+      styleTag.remove();
+    }, 80);
+  }
+  function handleExportExcel() {
+    if (!data || data.Rekap.length === 0) return;
+    const header = ["No", "Nama", "NISN", "Hadir", "Sakit", "Izin", "Alfa"];
+    const rows = data.Rekap.map((r, idx) => [idx + 1, r.Nama, r.NISN, r.Hadir, r.Sakit, r.Izin, r.Alfa]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = header.map(() => ({
+      wch: 16
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Absensi " + mapel);
+    XLSX.writeFile(wb, "Absensi_" + mapel.replace(/\s+/g, "_") + "_" + kelas.replace(/\s+/g, "_") + ".xlsx");
+  }
+  return React.createElement(Card, {
+    title: "Cetak Absensi Siswa per Mata Pelajaran",
+    subtitle: "Rekap kehadiran diambil dari checklist kehadiran yang Anda isi di Jurnal Mengajar",
+    actions: React.createElement("div", {
+      className: "flex flex-wrap gap-2 no-print items-center"
+    }, React.createElement("select", {
+      value: mapel,
+      onChange: e => setMapel(e.target.value),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, mapelList.map(m => React.createElement("option", {
+      key: m,
+      value: m
+    }, m))), React.createElement("select", {
+      value: kelas,
+      onChange: e => setKelas(e.target.value),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, kelasList.map(k => React.createElement("option", {
+      key: k,
+      value: k
+    }, k))), React.createElement(Button, {
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Tampilkan"), React.createElement(Button, {
+      variant: "outline",
+      onClick: handleExportExcel
+    }, "\u2b07\ufe0f Unduh Excel"), React.createElement(Button, {
+      variant: "secondary",
+      onClick: handlePrint
+    }, "\ud83d\uddb0\ufe0f Cetak Absensi"))
+  }, mapelList.length === 0 || kelasList.length === 0 ? React.createElement(Alert, null, "Data Mata Pelajaran/Kelas yang Anda ampu belum diatur oleh Admin.") : null, error && React.createElement(Alert, null, error), React.createElement("div", {
+    id: printAreaId
+  }, React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1"
+  }, "ABSENSI SISWA MATA PELAJARAN ", mapel.toUpperCase()), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-1"
+  }, "SMK NEGERI 1 WOYLA"), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "Kelas ", kelas, " \u00b7 Guru: ", user.Nama, " \u00b7 Jumlah Pertemuan: ", data ? data.Jumlah_Pertemuan : 0), React.createElement("div", {
+    className: "overflow-x-auto"
+  }, React.createElement("table", {
+    className: "w-full text-sm"
+  }, React.createElement("thead", null, React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, React.createElement("th", {
+    className: "py-2"
+  }, "No"), React.createElement("th", null, "Nama"), React.createElement("th", null, "NISN"), React.createElement("th", null, "Hadir"), React.createElement("th", null, "Sakit"), React.createElement("th", null, "Izin"), React.createElement("th", null, "Alfa"))), React.createElement("tbody", null, data && data.Rekap.map((r, idx) => React.createElement("tr", {
+    key: r.ID_Siswa,
+    className: "border-b last:border-0"
+  }, React.createElement("td", {
+    className: "py-2"
+  }, idx + 1), React.createElement("td", null, r.Nama), React.createElement("td", null, r.NISN), React.createElement("td", null, r.Hadir), React.createElement("td", null, r.Sakit), React.createElement("td", null, r.Izin), React.createElement("td", null, r.Alfa))), (!data || data.Rekap.length === 0) && React.createElement("tr", null, React.createElement("td", {
+    colSpan: "7",
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada data absensi untuk mata pelajaran & kelas ini."))))), React.createElement(TandaTanganCetak, {
+    tanggal: formatTanggalIndo(todayStr()),
+    jabatanKanan: "Guru Mata Pelajaran " + mapel,
+    namaKanan: user.Nama,
+    nipKanan: user.Identitas_NIP_NISN
+  })));
+}
 function GuruRiwayatModule() {
   const {
     user
@@ -1473,7 +1587,12 @@ function GuruRiwayatModule() {
   }
   const siswaHadir = selected ? (selected.Kehadiran_Siswa || []).filter(k => k.Status === "Hadir") : [];
   const siswaTidakHadir = selected ? (selected.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir") : [];
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(CetakAbsensiMapelPanel, {
+    user: user,
+    printAreaId: selected ? "print-area-mapel-inactive" : "print-area"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     title: "Riwayat Jurnal Mengajar"
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
     className: "overflow-x-auto"
@@ -1568,7 +1687,7 @@ function GuruRiwayatModule() {
     jabatanKanan: "Guru Mata Pelajaran",
     namaKanan: selected.Nama_Guru,
     nipKanan: user.Identitas_NIP_NISN
-  }))));
+  })))));
 }
 
 /* ============================================================================
@@ -2082,11 +2201,14 @@ function AdminModule() {
   }, "Cetak Rekap Absensi Siswa"), /*#__PURE__*/React.createElement(Button, {
     variant: tab === "dokumen" ? "primary" : "outline",
     onClick: () => setTab("dokumen")
-  }, "Dokumen Sekolah")), tab === "guru" && /*#__PURE__*/React.createElement(AdminGuruTab, null), tab === "siswa" && /*#__PURE__*/React.createElement(AdminSiswaTab, null), tab === "libur" && /*#__PURE__*/React.createElement(AdminHariLiburTab, null), tab === "rekap_guru" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
+  }, "Dokumen Sekolah"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "cetak_akun" ? "primary" : "outline",
+    onClick: () => setTab("cetak_akun")
+  }, "Cetak Akun & QR Siswa")), tab === "guru" && /*#__PURE__*/React.createElement(AdminGuruTab, null), tab === "siswa" && /*#__PURE__*/React.createElement(AdminSiswaTab, null), tab === "libur" && /*#__PURE__*/React.createElement(AdminHariLiburTab, null), tab === "rekap_guru" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
     tipe: "guru"
   }), tab === "rekap_siswa" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
     tipe: "siswa"
-  }), tab === "dokumen" && /*#__PURE__*/React.createElement(AdminDokumenSekolahTab, null));
+  }), tab === "dokumen" && /*#__PURE__*/React.createElement(AdminDokumenSekolahTab, null), tab === "cetak_akun" && /*#__PURE__*/React.createElement(AdminCetakAkunSiswaTab, null));
 }
 const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi", "Waka Kesiswaan", "Waka Sarpras", "Kepala Perpustakaan", "Staf Perpustakaan", "Kepala Kompetensi Keahlian", "Pengawas Sekolah"];
 const HARI_LIST = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -2832,6 +2954,96 @@ function DokumenSekolahCard({
     rel: "noreferrer",
     className: "inline-block mt-3 text-sm text-primary-700 underline"
   }, "Buka di tab baru / Unduh"))));
+}
+// Cetak akun (username/password) + QR Code semua siswa sekaligus, khusus
+// Admin. Bisa difilter per kelas atau dicetak semua sekaligus dalam bentuk
+// kartu-kartu kecil (grid), siap dipotong dan dibagikan ke siswa.
+function AdminCetakAkunSiswaTab() {
+  const [semua, setSemua] = useState([]);
+  const [kelas, setKelas] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiCall("getAkunSiswaUntukCetak", {
+        Kelas: kelas || undefined
+      });
+      setSemua(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [kelas]);
+  const daftarKelas = useMemo(() => {
+    const set = new Set();
+    semua.forEach(s => s.Kelas && set.add(s.Kelas));
+    return Array.from(set).sort();
+  }, [semua]);
+  function handlePrint() {
+    window.print();
+  }
+  return React.createElement(Card, {
+    title: "Cetak Akun & QR Code Siswa",
+    subtitle: semua.length + " siswa" + (kelas ? " di kelas " + kelas : " (semua kelas)"),
+    actions: React.createElement("div", {
+      className: "flex flex-wrap gap-2 no-print items-center"
+    }, React.createElement("select", {
+      value: kelas,
+      onChange: e => setKelas(e.target.value),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, React.createElement("option", {
+      value: ""
+    }, "Semua Kelas"), daftarKelas.map(k => React.createElement("option", {
+      key: k,
+      value: k
+    }, k))), React.createElement(Button, {
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(Button, {
+      variant: "secondary",
+      onClick: handlePrint
+    }, "\ud83d\uddb0\ufe0f Cetak Semua Kartu Akun"))
+  }, error && React.createElement(Alert, null, error), React.createElement("p", {
+    className: "text-xs text-gray-400 mb-3 no-print"
+  }, "Setiap kartu berisi Nama, Kelas, Username (NISN), Password, dan QR Code siswa. QR Code berlaku untuk hari ini - jika perlu diserahkan langsung, cetak dan bagikan pada hari yang sama."), React.createElement("div", {
+    id: "print-area"
+  }, React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1"
+  }, "KARTU AKUN SISWA", kelas ? " - KELAS " + kelas.toUpperCase() : ""), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
+    className: "grid grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-3"
+  }, semua.map(s => React.createElement("div", {
+    key: s.ID,
+    className: "border rounded-lg p-3 flex items-center gap-3",
+    style: {
+      breakInside: "avoid"
+    }
+  }, React.createElement(InlineQrCode, {
+    idSiswa: s.ID,
+    size: 64
+  }), React.createElement("div", {
+    className: "min-w-0"
+  }, React.createElement("p", {
+    className: "font-semibold text-sm truncate"
+  }, s.Nama), React.createElement("p", {
+    className: "text-xs text-gray-500"
+  }, "Kelas ", s.Kelas), React.createElement("p", {
+    className: "text-xs text-gray-500 mt-1"
+  }, "User: ", React.createElement("span", {
+    className: "font-mono"
+  }, s.Username)), React.createElement("p", {
+    className: "text-xs text-gray-500"
+  }, "Pass: ", React.createElement("span", {
+    className: "font-mono"
+  }, s.Password)))))), semua.length === 0 && React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada data siswa.")));
 }
 function AdminHariLiburTab() {
   const now = new Date();

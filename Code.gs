@@ -61,7 +61,7 @@ const DAFTAR_PELANGGARAN = [
   // Kategori Ringan
   { kode: "R01", uraian: "Terlambat masuk sekolah", kategori: "Ringan", poin: 5 },
   { kode: "R02", uraian: "Tidak memakai atribut sekolah lengkap", kategori: "Ringan", poin: 5 },
-  { kode: "R03", uraian: "Tidak melaksanakan piket kebersihan kelas", kategori: "Ringan", poin: 5 },
+  { kode: "R03", uraian: "Membuang Sampah Sembarangan", kategori: "Ringan", poin: 5 },
   { kode: "R04", uraian: "Makan/minum saat KBM berlangsung", kategori: "Ringan", poin: 5 },
   { kode: "R05", uraian: "Rambut/penampilan tidak sesuai tata tertib", kategori: "Ringan", poin: 10 },
   // Kategori Sedang
@@ -260,6 +260,8 @@ function doPost(e) {
 
     saveJurnalMengajar: apiSaveJurnalMengajar,
     getJurnalMengajarByGuru: apiGetJurnalMengajarByGuru,
+    getAbsensiMapelByGuru: apiGetAbsensiMapelByGuru,
+    getAkunSiswaUntukCetak: apiGetAkunSiswaUntukCetak,
     getStatusAbsenHarianKelas: apiGetStatusAbsenHarianKelas,
 
     generateQrSession: apiGenerateQrSession,
@@ -509,6 +511,29 @@ function apiGetMasterData(payload) {
   return users;
 }
 
+// payload: { Kelas (opsional) } -> daftar akun siswa (Nama, NISN/username,
+// Password, Kelas) LENGKAP dengan password (khusus dipakai Admin untuk cetak
+// kartu akun + QR massal). TIDAK dipakai di endpoint lain manapun karena
+// password ditampilkan apa adanya.
+function apiGetAkunSiswaUntukCetak(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  let siswa = users.filter(function (u) { return parseRoles(u.Role_List).indexOf("Siswa") !== -1; });
+  if (payload && payload.Kelas) {
+    siswa = siswa.filter(function (u) { return u.Kelas_Diampu === payload.Kelas; });
+  }
+  return siswa
+    .map(function (u) {
+      return {
+        ID: u.ID,
+        Nama: u.Nama,
+        Username: u.Identitas_NIP_NISN,
+        Password: u.Password,
+        Kelas: u.Kelas_Diampu
+      };
+    })
+    .sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama.localeCompare(b.Nama); });
+}
+
 // payload = seluruh field Users_Master; jika ada ID -> update, jika tidak -> insert baru
 function apiSaveUser(payload) {
   const rolesArray = Array.isArray(payload.Roles) ? payload.Roles : parseRoles(payload.Role_List);
@@ -664,6 +689,48 @@ function apiGetJurnalMengajarByGuru(payload) {
     .filter(function (r) { return r.ID_Guru === payload.ID_Guru; })
     .map(function (r) { r.Kehadiran_Siswa = safeParseJson(r.Kehadiran_Siswa_JSON); return r; })
     .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+}
+
+// payload: { ID_Guru, Kelas, Mapel } -> rekap absensi siswa untuk SATU mata
+// pelajaran & kelas yang diampu guru ybs (diambil dari Absen_Siswa_Reguler
+// yang tersinkron otomatis setiap guru mengisi Jurnal Mengajar). Dipakai
+// untuk cetak absensi per mata pelajaran di menu "Riwayat & Cetak Jurnal".
+function apiGetAbsensiMapelByGuru(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const siswaKelas = users.filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
+  });
+  const siswaMap = {};
+  siswaKelas.forEach(function (s) { siswaMap[s.ID] = s; });
+
+  const absen = readSheetAsObjects(SHEET_NAMES.ABSEN_SISWA_REGULER).filter(function (r) {
+    return r.ID_Guru === payload.ID_Guru && r.Mapel === payload.Mapel && r.Kelas === payload.Kelas;
+  });
+
+  const tanggalUnik = Array.from(new Set(absen.map(function (r) { return formatDateOnly(r.Tanggal); })))
+    .sort(function (a, b) { return new Date(a) - new Date(b); });
+
+  const rekap = siswaKelas.map(function (s) {
+    const riwayat = absen.filter(function (r) { return r.ID_Siswa === s.ID; });
+    return {
+      ID_Siswa: s.ID,
+      Nama: s.Nama,
+      NISN: s.Identitas_NIP_NISN,
+      Hadir: riwayat.filter(function (r) { return r.Status === "Hadir"; }).length,
+      Sakit: riwayat.filter(function (r) { return r.Status === "Sakit"; }).length,
+      Izin: riwayat.filter(function (r) { return r.Status === "Izin"; }).length,
+      Alfa: riwayat.filter(function (r) { return r.Status === "Alfa"; }).length,
+      Detail: riwayat.map(function (r) { return { Tanggal: formatDateOnly(r.Tanggal), Status: r.Status }; })
+    };
+  }).sort(function (a, b) { return a.Nama.localeCompare(b.Nama); });
+
+  return {
+    Kelas: payload.Kelas,
+    Mapel: payload.Mapel,
+    Jumlah_Pertemuan: tanggalUnik.length,
+    Tanggal_Pertemuan: tanggalUnik,
+    Rekap: rekap
+  };
 }
 
 function safeParseJson(str) {
