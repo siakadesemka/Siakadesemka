@@ -61,7 +61,7 @@ const DAFTAR_PELANGGARAN = [
   // Kategori Ringan
   { kode: "R01", uraian: "Terlambat masuk sekolah", kategori: "Ringan", poin: 5 },
   { kode: "R02", uraian: "Tidak memakai atribut sekolah lengkap", kategori: "Ringan", poin: 5 },
-  { kode: "R03", uraian: "Membuang Sampah Sembarangan", kategori: "Ringan", poin: 5 },
+  { kode: "R03", uraian: "Tidak melaksanakan piket kebersihan kelas", kategori: "Ringan", poin: 5 },
   { kode: "R04", uraian: "Makan/minum saat KBM berlangsung", kategori: "Ringan", poin: 5 },
   { kode: "R05", uraian: "Rambut/penampilan tidak sesuai tata tertib", kategori: "Ringan", poin: 10 },
   // Kategori Sedang
@@ -214,6 +214,24 @@ function setupDatabase() {
     }
   });
 
+  // Beberapa kolom berisi teks bebas yang POLANYA bisa disalahartikan Google
+  // Sheets sebagai tanggal (mis. guru mengetik "4/7" untuk Jam Ke lalu
+  // otomatis berubah jadi tanggal 4 Juli). Paksa kolom ini selalu berformat
+  // teks murni supaya nilai apa pun yang diketik tersimpan apa adanya.
+  const KOLOM_PAKSA_TEKS = {
+    Jurnal_Mengajar: ["Jam_Ke", "Pertemuan_Ke"]
+  };
+  Object.keys(KOLOM_PAKSA_TEKS).forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    KOLOM_PAKSA_TEKS[sheetName].forEach(function (kolom) {
+      const colIndex = headers.indexOf(kolom);
+      if (colIndex === -1) return;
+      sheet.getRange(1, colIndex + 1, Math.max(sheet.getMaxRows(), 1000), 1).setNumberFormat("@");
+    });
+  });
+
   // Buat 1 akun Admin default jika sheet Users_Master masih kosong
   const usersSheet = ss.getSheetByName(SHEET_NAMES.USERS);
   if (usersSheet.getLastRow() <= 1) {
@@ -360,8 +378,20 @@ function readSheetAsObjects(sheetName) {
     const obj = { _rowIndex: idx + 2 };
     headers.forEach(function (h, i) {
       let val = row[i];
-      if (val instanceof Date && KOLOM_TIMESTAMP_LENGKAP.indexOf(h) === -1) {
-        val = formatDateOnly(val);
+      // Hanya format sebagai tanggal jika kolom ini MEMANG kolom tanggal
+      // (namanya "Tanggal" atau mengandung "Tanggal"/"CreatedAt"/"ExpiredAt").
+      // Kolom teks bebas (mis. Jam_Ke) yang kebetulan ke-parse Sheets sebagai
+      // Date TIDAK diformat ulang di sini supaya tidak makin menyesatkan.
+      const isKolomTanggal = h === "Tanggal" || h.indexOf("Tanggal") !== -1 || KOLOM_TIMESTAMP_LENGKAP.indexOf(h) !== -1;
+      if (val instanceof Date) {
+        if (isKolomTanggal && KOLOM_TIMESTAMP_LENGKAP.indexOf(h) === -1) {
+          val = formatDateOnly(val);
+        } else if (!isKolomTanggal) {
+          // Kolom bukan-tanggal tapi nilainya Date (data lama yang sudah
+          // terlanjur salah format) -> tampilkan apa adanya sebagai teks
+          // singkat, bukan yyyy-MM-dd penuh, sebagai penanda ada anomali.
+          val = Utilities.formatDate(val, CONFIG.TIMEZONE, "d/M");
+        }
       }
       obj[h] = val;
     });
@@ -466,7 +496,10 @@ function apiUploadPhoto(payload) {
   const blob = Utilities.newBlob(bytes, mimeType, payload.fileName || (generateId("FOTO") + ".jpg"));
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return { url: "https://drive.google.com/uc?export=view&id=" + file.getId(), fileId: file.getId() };
+  // Endpoint "uc?export=view" sering gagal tampil sebagai <img> (Google
+  // menampilkan halaman peringatan/scan alih-alih file mentah). Endpoint
+  // "thumbnail" jauh lebih andal untuk hotlink gambar langsung di <img src>.
+  return { url: "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1600", fileId: file.getId() };
 }
 
 // ============================================================================
