@@ -281,6 +281,7 @@ function doPost(e) {
     getJurnalMengajarByKelas: apiGetJurnalMengajarByKelas,
     getAbsensiMapelByGuru: apiGetAbsensiMapelByGuru,
     getAkunSiswaUntukCetak: apiGetAkunSiswaUntukCetak,
+    getSiswaUntukCetakKartu: apiGetSiswaUntukCetakKartu,
     getStatusAbsenHarianKelas: apiGetStatusAbsenHarianKelas,
 
     generateQrSession: apiGenerateQrSession,
@@ -566,6 +567,33 @@ function apiGetAkunSiswaUntukCetak(payload) {
       };
     })
     .sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama.localeCompare(b.Nama); });
+}
+
+// payload: { Kelas (opsional) } -> daftar siswa LENGKAP (Nama, NISN, Kelas,
+// TTL, Alamat, Foto) TANPA password, khusus dipakai Admin untuk mencetak
+// Kartu Pelajar + Kartu Perpustakaan secara massal (timbal balik dalam satu
+// file). Berbeda dari apiGetAkunSiswaUntukCetak yang menyertakan password.
+function apiGetSiswaUntukCetakKartu(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  let siswa = users.filter(function (u) { return parseRoles(u.Role_List).indexOf("Siswa") !== -1; });
+  if (payload && payload.Kelas) {
+    siswa = siswa.filter(function (u) { return u.Kelas_Diampu === payload.Kelas; });
+  }
+  return siswa
+    .map(function (u) {
+      return {
+        ID: u.ID,
+        Nama: u.Nama,
+        Identitas_NIP_NISN: u.Identitas_NIP_NISN,
+        Kelas_Diampu: u.Kelas_Diampu,
+        Kompetensi_Keahlian: u.Kompetensi_Keahlian,
+        Tempat_Lahir: u.Tempat_Lahir,
+        Tanggal_Lahir: u.Tanggal_Lahir,
+        Alamat_Siswa: u.Alamat_Siswa,
+        Foto_URL: u.Foto_URL || ""
+      };
+    })
+    .sort(function (a, b) { return (a.Kelas_Diampu || "").localeCompare(b.Kelas_Diampu || "") || a.Nama.localeCompare(b.Nama); });
 }
 
 // payload = seluruh field Users_Master; jika ada ID -> update, jika tidak -> insert baru

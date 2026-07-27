@@ -84,6 +84,7 @@
     #print-area th, #print-area td { border: 1px solid #000; padding: 4px 6px; font-size: 10pt; }
     #print-area h1, #print-area h2, #print-area h3 { color: #000 !important; }
     .print-signature { margin-top: 40px; display: flex; justify-content: space-between; }
+    .print-page-break { page-break-before: always; break-before: page; }
     @page { size: A4; margin: 10mm; }
   }
 </style>
@@ -2327,11 +2328,14 @@ function AdminModule() {
   }, "Dokumen Sekolah"), /*#__PURE__*/React.createElement(Button, {
     variant: tab === "cetak_akun" ? "primary" : "outline",
     onClick: () => setTab("cetak_akun")
-  }, "Cetak Akun & QR Siswa")), tab === "guru" && /*#__PURE__*/React.createElement(AdminGuruTab, null), tab === "siswa" && /*#__PURE__*/React.createElement(AdminSiswaTab, null), tab === "libur" && /*#__PURE__*/React.createElement(AdminHariLiburTab, null), tab === "rekap_guru" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
+  }, "Cetak Akun & QR Siswa"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "cetak_kartu" ? "primary" : "outline",
+    onClick: () => setTab("cetak_kartu")
+  }, "Cetak Kartu Pelajar & Perpustakaan")), tab === "guru" && /*#__PURE__*/React.createElement(AdminGuruTab, null), tab === "siswa" && /*#__PURE__*/React.createElement(AdminSiswaTab, null), tab === "libur" && /*#__PURE__*/React.createElement(AdminHariLiburTab, null), tab === "rekap_guru" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
     tipe: "guru"
   }), tab === "rekap_siswa" && /*#__PURE__*/React.createElement(AdminRekapBulananTab, {
     tipe: "siswa"
-  }), tab === "dokumen" && /*#__PURE__*/React.createElement(AdminDokumenSekolahTab, null), tab === "cetak_akun" && /*#__PURE__*/React.createElement(AdminCetakAkunSiswaTab, null));
+  }), tab === "dokumen" && /*#__PURE__*/React.createElement(AdminDokumenSekolahTab, null), tab === "cetak_akun" && /*#__PURE__*/React.createElement(AdminCetakAkunSiswaTab, null), tab === "cetak_kartu" && /*#__PURE__*/React.createElement(AdminCetakKartuTab, null));
 }
 const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi", "Waka Kesiswaan", "Waka Sarpras", "Kepala Perpustakaan", "Staf Perpustakaan", "Kepala Kompetensi Keahlian", "Pengawas Sekolah"];
 
@@ -3198,6 +3202,108 @@ function AdminCetakAkunSiswaTab() {
   }, s.Password)))))), semua.length === 0 && React.createElement("p", {
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data siswa.")));
+}
+// Cetak Kartu Pelajar + Kartu Perpustakaan semua siswa sekaligus dalam SATU
+// file, khusus Admin. Kartu Pelajar dicetak di "halaman 1" dan Kartu
+// Perpustakaan di "halaman 2" (page-break terpisah) dengan urutan siswa yang
+// SAMA persis, sehingga saat dicetak dengan opsi cetak dua sisi (duplex) di
+// dialog print browser, kartu depan (Pelajar) & belakang (Perpustakaan)
+// tiap siswa akan berpasangan sesuai urutannya.
+function AdminCetakKartuTab() {
+  const [semua, setSemua] = useState([]);
+  const [kelas, setKelas] = useState("");
+  const [namaKepsek, setNamaKepsek] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiCall("getSiswaUntukCetakKartu", {
+        Kelas: kelas || undefined
+      });
+      setSemua(res);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [kelas]);
+  useEffect(() => {
+    apiCall("getMasterData", {
+      scope: "all"
+    }).then(all => {
+      const kepsek = all.find(u => (u.Roles || []).includes("Kepala Sekolah"));
+      if (kepsek) setNamaKepsek(kepsek.Nama);
+    }).catch(() => {});
+  }, []);
+  const daftarKelas = useMemo(() => {
+    const set = new Set();
+    semua.forEach(s => s.Kelas_Diampu && set.add(s.Kelas_Diampu));
+    return Array.from(set).sort();
+  }, [semua]);
+  function handlePrint() {
+    window.print();
+  }
+  return React.createElement(Card, {
+    title: "Cetak Kartu Pelajar & Kartu Perpustakaan",
+    subtitle: semua.length + " siswa" + (kelas ? " di kelas " + kelas : " (semua kelas)"),
+    actions: React.createElement("div", {
+      className: "flex flex-wrap gap-2 no-print items-center"
+    }, React.createElement("select", {
+      value: kelas,
+      onChange: e => setKelas(e.target.value),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, React.createElement("option", {
+      value: ""
+    }, "Semua Kelas"), daftarKelas.map(k => React.createElement("option", {
+      key: k,
+      value: k
+    }, k))), React.createElement(Button, {
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(Button, {
+      variant: "secondary",
+      onClick: handlePrint
+    }, "\ud83d\uddb0\ufe0f Cetak Semua Kartu"))
+  }, error && React.createElement(Alert, null, error), React.createElement("p", {
+    className: "text-xs text-gray-400 mb-3 no-print"
+  }, "Setiap siswa mendapat 1 Kartu Pelajar (halaman pertama) dan 1 Kartu Perpustakaan (halaman kedua), keduanya dalam satu file dengan urutan siswa yang sama. Untuk hasil bolak-balik, aktifkan opsi \"Cetak dua sisi\" (duplex) di kotak dialog cetak browser Anda. Jika posisi baliknya terbalik/tidak sesuai, coba ganti pengaturan \"flip on short edge\" / \"flip on long edge\" pada dialog tersebut sesuai jenis printer Anda."), React.createElement("div", {
+    id: "print-area"
+  }, React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1"
+  }, "KARTU TANDA PELAJAR", kelas ? " - KELAS " + kelas.toUpperCase() : ""), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
+    className: "grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4"
+  }, semua.map(s => React.createElement("div", {
+    key: "pelajar-" + s.ID,
+    style: {
+      breakInside: "avoid"
+    }
+  }, React.createElement(KartuSiswa, {
+    user: s,
+    namaKepsek: namaKepsek
+  })))), semua.length === 0 && React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada data siswa."), semua.length > 0 && React.createElement("div", {
+    className: "print-page-break"
+  }, React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1 mt-4"
+  }, "KARTU ANGGOTA PERPUSTAKAAN", kelas ? " - KELAS " + kelas.toUpperCase() : ""), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
+    className: "grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4"
+  }, semua.map(s => React.createElement("div", {
+    key: "perpus-" + s.ID,
+    style: {
+      breakInside: "avoid"
+    }
+  }, React.createElement(KartuPerpustakaan, {
+    user: s
+  })))))));
 }
 function AdminHariLiburTab() {
   const now = new Date();
