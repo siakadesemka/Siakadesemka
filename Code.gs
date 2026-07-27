@@ -61,7 +61,7 @@ const DAFTAR_PELANGGARAN = [
   // Kategori Ringan
   { kode: "R01", uraian: "Terlambat masuk sekolah", kategori: "Ringan", poin: 5 },
   { kode: "R02", uraian: "Tidak memakai atribut sekolah lengkap", kategori: "Ringan", poin: 5 },
-  { kode: "R03", uraian: "Tidak melaksanakan piket kebersihan kelas", kategori: "Ringan", poin: 5 },
+  { kode: "R03", uraian: "Membuang Sampah Sembarangan", kategori: "Ringan", poin: 5 },
   { kode: "R04", uraian: "Makan/minum saat KBM berlangsung", kategori: "Ringan", poin: 5 },
   { kode: "R05", uraian: "Rambut/penampilan tidak sesuai tata tertib", kategori: "Ringan", poin: 10 },
   // Kategori Sedang
@@ -278,6 +278,7 @@ function doPost(e) {
 
     saveJurnalMengajar: apiSaveJurnalMengajar,
     getJurnalMengajarByGuru: apiGetJurnalMengajarByGuru,
+    getJurnalMengajarByKelas: apiGetJurnalMengajarByKelas,
     getAbsensiMapelByGuru: apiGetAbsensiMapelByGuru,
     getAkunSiswaUntukCetak: apiGetAkunSiswaUntukCetak,
     getStatusAbsenHarianKelas: apiGetStatusAbsenHarianKelas,
@@ -715,6 +716,25 @@ function apiSaveJurnalMengajar(payload) {
   });
 
   return obj;
+}
+
+// payload: { Kelas, startDate (opsional), endDate (opsional) } -> SELURUH
+// Jurnal Mengajar dari SEMUA guru mata pelajaran untuk satu kelas, digabung
+// jadi satu kumpulan data supaya Wali Kelas bisa mencetaknya dalam satu file.
+function apiGetJurnalMengajarByKelas(payload) {
+  let rows = readSheetAsObjects(SHEET_NAMES.JURNAL_MENGAJAR)
+    .filter(function (r) { return r.Kelas === payload.Kelas; });
+  if (payload.startDate && payload.endDate) {
+    const startT = new Date(payload.startDate).getTime();
+    const endT = new Date(payload.endDate).getTime();
+    rows = rows.filter(function (r) {
+      const t = new Date(r.Tanggal).getTime();
+      return t >= startT && t <= endT;
+    });
+  }
+  return rows
+    .map(function (r) { r.Kehadiran_Siswa = safeParseJson(r.Kehadiran_Siswa_JSON); return r; })
+    .sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal) || String(a.Jam_Ke).localeCompare(String(b.Jam_Ke)); });
 }
 
 function apiGetJurnalMengajarByGuru(payload) {

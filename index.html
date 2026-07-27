@@ -703,6 +703,10 @@ const ROLE_MENU = {
     label: "Dashboard Wali Kelas",
     icon: "📊"
   }, {
+    key: "wali_cetak_jurnal_kelas",
+    label: "Cetak Jurnal Mengajar Kelas",
+    icon: "🖨️"
+  }, {
     key: "wali_bimbingan",
     label: "Jurnal Bimbingan",
     icon: "💬"
@@ -1042,6 +1046,7 @@ function PageRouter({
     guru_scan_siswa: GuruScanSiswaModule,
     guru_mgmp: GuruMgmpModule,
     wali_dashboard: WaliKelasModule,
+    wali_cetak_jurnal_kelas: CetakJurnalKelasModule,
     wali_bimbingan: JurnalBimbinganModule,
     wali_kaih: GuruWali7KaihModule,
     siswa_home: SiswaHomeModule,
@@ -1873,6 +1878,124 @@ function GuruMgmpModule() {
     className: "text-center text-gray-400 py-6"
   }, "Belum ada jurnal kegiatan MGMP."))));
 }
+// Kumpulan Jurnal Mengajar dari SEMUA guru mata pelajaran untuk satu kelas,
+// digabung jadi satu file yang bisa dicetak/diunduh sekaligus oleh Wali Kelas.
+function CetakJurnalKelasModule() {
+  const {
+    user
+  } = useAuth();
+  const kelasWali = (user.Kelas_Wali || "").trim() || (user.Kelas_Diampu || "").split(",")[0]?.trim() || "";
+  const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(todayStr());
+  const [data, setData] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    if (!kelasWali) return;
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getJurnalMengajarByKelas", {
+        Kelas: kelasWali,
+        startDate,
+        endDate
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    if (kelasWali) load();
+  }, []);
+  function handlePrint() {
+    window.print();
+  }
+  function handleExportExcel() {
+    if (data.length === 0) return;
+    const header = ["Tanggal", "Jam Ke", "Mapel", "Guru", "Pertemuan Ke", "Materi", "Jumlah Hadir", "Jumlah Tidak Hadir", "Siswa Tidak Hadir"];
+    const rows = data.map(j => {
+      const tidakHadir = (j.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir");
+      const hadir = (j.Kehadiran_Siswa || []).filter(k => k.Status === "Hadir");
+      return [formatTanggalIndo(j.Tanggal), j.Jam_Ke, j.Mapel, j.Nama_Guru, j.Pertemuan_Ke, j.Materi, hadir.length, tidakHadir.length, tidakHadir.map(k => k.Nama_Siswa + " (" + k.Status + ")").join(", ")];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = header.map(() => ({
+      wch: 20
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Jurnal Mengajar Kelas");
+    XLSX.writeFile(wb, "Jurnal_Mengajar_" + kelasWali.replace(/\s+/g, "_") + ".xlsx");
+  }
+  return React.createElement(Card, {
+    title: "Cetak Jurnal Mengajar Kelas - " + namaKelasLengkap(kelasWali),
+    subtitle: data.length + " entri jurnal dari seluruh guru mata pelajaran",
+    actions: React.createElement("div", {
+      className: "flex flex-wrap gap-2 no-print items-end"
+    }, React.createElement(Input, {
+      label: "Dari Tanggal",
+      type: "date",
+      value: startDate,
+      onChange: e => setStartDate(e.target.value)
+    }), React.createElement(Input, {
+      label: "Sampai Tanggal",
+      type: "date",
+      value: endDate,
+      onChange: e => setEndDate(e.target.value)
+    }), React.createElement(Button, {
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Terapkan Filter"), React.createElement(Button, {
+      variant: "outline",
+      onClick: handleExportExcel
+    }, "\u2b07\ufe0f Unduh Excel"), React.createElement(Button, {
+      variant: "secondary",
+      onClick: handlePrint
+    }, "\ud83d\uddb0\ufe0f Cetak Semua Jurnal"))
+  }, !kelasWali && React.createElement(Alert, null, "Kelas wali Anda belum diatur oleh Admin."), error && React.createElement(Alert, null, error), React.createElement("div", {
+    id: "print-area"
+  }, React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1"
+  }, "KUMPULAN JURNAL MENGAJAR GURU"), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-1"
+  }, "SMK NEGERI 1 WOYLA"), React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "Kelas ", namaKelasLengkap(kelasWali), " \u00b7 Periode ", startDate, " s.d. ", endDate), data.map(j => React.createElement("div", {
+    key: j.ID,
+    className: "border rounded-lg p-3 mb-3",
+    style: {
+      breakInside: "avoid"
+    }
+  }, React.createElement("div", {
+    className: "flex flex-wrap justify-between gap-2 text-sm mb-2"
+  }, React.createElement("span", {
+    className: "font-semibold"
+  }, formatTanggalIndo(j.Tanggal), " \u00b7 Jam Ke ", j.Jam_Ke, " \u00b7 Pertemuan Ke ", j.Pertemuan_Ke), React.createElement("span", null, React.createElement(Badge, {
+    color: "indigo"
+  }, j.Mapel), " \u00b7 ", j.Nama_Guru)), React.createElement("p", {
+    className: "text-sm"
+  }, React.createElement("span", {
+    className: "font-medium"
+  }, "Tujuan: "), j.Tujuan_Pembelajaran), React.createElement("p", {
+    className: "text-sm"
+  }, React.createElement("span", {
+    className: "font-medium"
+  }, "Materi: "), j.Materi), j.Catatan_Kelas && React.createElement("p", {
+    className: "text-sm"
+  }, React.createElement("span", {
+    className: "font-medium"
+  }, "Catatan: "), j.Catatan_Kelas), React.createElement("p", {
+    className: "text-sm mt-1"
+  }, React.createElement(Badge, {
+    color: "green"
+  }, "Hadir ", (j.Kehadiran_Siswa || []).filter(k => k.Status === "Hadir").length), " ", React.createElement(Badge, {
+    color: "red"
+  }, "Tidak Hadir ", (j.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir").length)), (j.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir").length > 0 && React.createElement("p", {
+    className: "text-xs text-gray-500 mt-1"
+  }, "Tidak hadir: ", (j.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir").map(k => k.Nama_Siswa + " (" + k.Status + ")").join(", ")))), data.length === 0 && React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada jurnal mengajar untuk kelas ini pada periode tersebut.")));
+}
 function WaliKelasModule() {
   const {
     user
@@ -1902,7 +2025,7 @@ function WaliKelasModule() {
   const totalHari = rekap.reduce((a, r) => a + r.Hadir + r.Sakit + r.Izin + r.Alfa, 0);
   const persenHadir = totalHari ? Math.round(totalHadir / totalHari * 100) : 0;
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
-    title: "Dashboard Wali Kelas - " + kelasWali,
+    title: "Dashboard Wali Kelas - " + namaKelasLengkap(kelasWali),
     className: "mb-4"
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
     className: "flex flex-wrap gap-3 items-end mb-4 no-print"
@@ -1965,11 +2088,11 @@ function WaliKelasModule() {
     className: "text-lg font-bold text-center"
   }, "REKAP KEHADIRAN SISWA"), /*#__PURE__*/React.createElement("p", {
     className: "text-center text-sm mb-4"
-  }, "Kelas ", kelasWali, " · Periode ", startDate, " s.d. ", endDate), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+  }, "Kelas ", namaKelasLengkap(kelasWali), " · Periode ", startDate, " s.d. ", endDate), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: r.ID_Siswa
   }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Hadir), /*#__PURE__*/React.createElement("td", null, r.Sakit), /*#__PURE__*/React.createElement("td", null, r.Izin), /*#__PURE__*/React.createElement("td", null, r.Alfa))))), /*#__PURE__*/React.createElement(TandaTanganCetak, {
     tanggal: endDate,
-    jabatanKanan: "Wali Kelas " + kelasWali,
+    jabatanKanan: "Wali Kelas " + namaKelasLengkap(kelasWali),
     namaKanan: user.Nama
   })));
 }
@@ -2211,6 +2334,23 @@ function AdminModule() {
   }), tab === "dokumen" && /*#__PURE__*/React.createElement(AdminDokumenSekolahTab, null), tab === "cetak_akun" && /*#__PURE__*/React.createElement(AdminCetakAkunSiswaTab, null));
 }
 const ALL_ROLES = ["Admin", "Guru", "Wali Kelas", "Guru Wali", "Tata Usaha", "Siswa", "Kepala Sekolah", "Waka Kurikulum", "Waka Hubmi", "Waka Kesiswaan", "Waka Sarpras", "Kepala Perpustakaan", "Staf Perpustakaan", "Kepala Kompetensi Keahlian", "Pengawas Sekolah"];
+
+// Daftar kode kelas BAKU yang dipakai di SELURUH aplikasi (Kelas siswa, Kelas
+// Diampu guru, Kelas Wali). Memakai kode singkat yang sama persis di semua
+// tempat penting supaya data selalu bisa dicocokkan (rekap kehadiran, jurnal
+// bimbingan, dsb tidak akan "Tidak ada data" akibat penulisan kelas yang beda-beda).
+const DAFTAR_KELAS = ["X ATU", "X BD", "XI ATU", "XI BD", "XII ATU", "XII BD"];
+const NAMA_KELAS_LENGKAP = {
+  "X ATU": "X Agribisnis Ternak Unggas",
+  "X BD": "X Bisnis Digital",
+  "XI ATU": "XI Agribisnis Ternak Unggas",
+  "XI BD": "XI Bisnis Digital",
+  "XII ATU": "XII Agribisnis Ternak Unggas",
+  "XII BD": "XII Bisnis Digital"
+};
+function namaKelasLengkap(kode) {
+  return NAMA_KELAS_LENGKAP[kode] || kode || "";
+}
 const HARI_LIST = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const JAM_KE_LIST = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -2388,14 +2528,28 @@ function AdminGuruTab() {
       ...editing,
       Mapel_Diampu: e.target.value
     })
-  }), /*#__PURE__*/React.createElement(Input, {
-    label: "Kelas Diampu (pisah koma)",
-    value: editing.Kelas_Diampu,
-    onChange: e => setEditing({
-      ...editing,
-      Kelas_Diampu: e.target.value
-    })
-  }), /*#__PURE__*/React.createElement(Input, {
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "mb-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "block text-sm font-medium text-gray-600 mb-1"
+  }, "Kelas Diampu (boleh pilih lebih dari satu)"), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2"
+  }, DAFTAR_KELAS.map(k => {
+    const terpilih = (editing.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean).includes(k);
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      type: "button",
+      onClick: () => {
+        const arr = (editing.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+        const next = terpilih ? arr.filter(n => n !== k) : [...arr, k];
+        setEditing({
+          ...editing,
+          Kelas_Diampu: next.join(", ")
+        });
+      },
+      className: classNames("px-3 py-1 rounded-full text-xs border", terpilih ? "bg-accent text-white border-accent" : "border-gray-300 text-gray-600")
+    }, k);
+  }))), /*#__PURE__*/React.createElement(Input, {
     label: "No. HP (untuk notifikasi WhatsApp)",
     value: editing.No_HP,
     onChange: e => setEditing({
@@ -2471,14 +2625,14 @@ function AdminGuruTab() {
     className: classNames("px-3 py-1 rounded-full text-xs border", editing.Roles.includes(r) ? "bg-primary text-white border-primary" : "border-gray-300 text-gray-600")
   }, r)))), editing.Roles.includes("Wali Kelas") && /*#__PURE__*/React.createElement("div", {
     className: "mt-3"
-  }, /*#__PURE__*/React.createElement(Input, {
+  }, /*#__PURE__*/React.createElement(Select, {
     label: "Kelas yang Diwalikan (Wali Kelas)",
     value: editing.Kelas_Wali,
     onChange: e => setEditing({
       ...editing,
       Kelas_Wali: e.target.value
     }),
-    placeholder: "cth: X Bisnis Digital 1"
+    options: DAFTAR_KELAS
   })), editing.Roles.includes("Kepala Kompetensi Keahlian") && /*#__PURE__*/React.createElement("div", {
     className: "mt-3"
   }, /*#__PURE__*/React.createElement(Select, {
@@ -2642,14 +2796,14 @@ function AdminSiswaTab() {
       ...editing,
       Password: e.target.value
     })
-  }), /*#__PURE__*/React.createElement(Input, {
+  }), /*#__PURE__*/React.createElement(Select, {
     label: "Kelas",
     value: editing.Kelas_Diampu,
     onChange: e => setEditing({
       ...editing,
       Kelas_Diampu: e.target.value
     }),
-    placeholder: "cth: XII RPL 1"
+    options: DAFTAR_KELAS
   }), /*#__PURE__*/React.createElement(Input, {
     label: "Tempat Lahir",
     value: editing.Tempat_Lahir,
