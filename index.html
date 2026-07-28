@@ -375,31 +375,124 @@ function TandaTanganCetak({
   }, "NIP. ", nipKanan)));
 }
 
-// Tombol cetak generik: menampilkan #print-area lalu memicu window.print()
+// Ukuran kertas yang bisa dipilih pengguna untuk SEMUA fitur cetak di aplikasi ini.
+const UKURAN_KERTAS_CETAK = {
+  A4: { label: "A4", w: "210mm", h: "297mm" },
+  F4: { label: "F4 / Folio", w: "215mm", h: "330mm" },
+  Letter: { label: "Letter", w: "216mm", h: "279mm" },
+  Legal: { label: "Legal", w: "216mm", h: "356mm" }
+};
+
+// Menyuntikkan/memperbarui aturan @page (ukuran kertas & margin) sesuai pilihan
+// pengguna sesaat sebelum window.print() dijalankan. Dipakai bersama oleh semua
+// fitur cetak supaya tidak perlu mengulang logika yang sama di tiap tempat.
+function terapkanPengaturanKertasCetak(kodeKertas, marginMm, landscape) {
+  let styleEl = document.getElementById("dynamic-print-page-style");
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = "dynamic-print-page-style";
+    document.head.appendChild(styleEl);
+  }
+  const k = UKURAN_KERTAS_CETAK[kodeKertas] || UKURAN_KERTAS_CETAK.A4;
+  const sizeCss = landscape ? (k.h + " " + k.w) : (k.w + " " + k.h);
+  const m = (Number(marginMm) || 0) + "mm";
+  styleEl.textContent = "@media print { @page { size: " + sizeCss + "; margin: " + m + "; } #print-area, #print-area-mapel-inactive { padding: 0 !important; } }";
+}
+
+// Membungkus konten HTML sebuah area cetak menjadi dokumen Word (.doc) sederhana
+// (format HTML yang bisa dibuka Word) lalu memicu unduhan. Bekerja untuk SEMUA
+// jenis konten cetak (tabel, kartu, dsb) karena hanya menyalin HTML apa adanya.
+function unduhAreaCetakSebagaiWord(printAreaId, namaFile) {
+  const el = document.getElementById(printAreaId);
+  if (!el) { alert("Area cetak tidak ditemukan."); return; }
+  const html = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>" +
+    "<head><meta charset='utf-8'><title>" + namaFile + "</title></head><body>" + el.innerHTML + "</body></html>";
+  const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = namaFile.replace(/\.[^.]+$/, "") + ".doc";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Jalan pintas generik: mengunduh tabel HTML pertama di dalam sebuah area cetak
+// sebagai file Excel (.xlsx) memakai SheetJS. Dipakai jika area cetak TIDAK
+// menyediakan fungsi ekspor Excel khusus (data terstruktur) sendiri.
+function unduhAreaCetakSebagaiExcel(printAreaId, namaFile) {
+  const el = document.getElementById(printAreaId);
+  const table = el ? el.querySelector("table") : null;
+  if (!table) { alert("Tidak ada tabel pada area cetak ini untuk diekspor ke Excel."); return; }
+  const wb = XLSX.utils.table_to_book(table, { sheet: "Data" });
+  XLSX.writeFile(wb, namaFile.replace(/\.[^.]+$/, "") + ".xlsx");
+}
+
+// Toolbar cetak generik dipakai di SEMUA fitur cetak: pilih ukuran kertas,
+// atur margin (mm), lalu pilih format hasil - Cetak/Simpan PDF (lewat dialog
+// cetak browser), unduh Word (.doc), atau unduh Excel (.xlsx).
 function PrintButton({
   label = "Cetak",
   onBeforePrint,
-  landscape
+  landscape,
+  printAreaId = "print-area",
+  filename,
+  onExportExcel,
+  showExcel = true,
+  showWord = true
 }) {
-  function handleClick() {
+  const [kertas, setKertas] = useState("A4");
+  const [margin, setMargin] = useState(landscape ? 8 : 10);
+  const namaFile = filename || label.replace(/\s+/g, "_");
+  function handlePrint() {
     if (onBeforePrint) onBeforePrint();
-    let styleTag = null;
-    if (landscape) {
-      styleTag = document.createElement("style");
-      styleTag.id = "temp-landscape-style";
-      styleTag.innerHTML = "@page { size: A4 landscape; margin: 8mm; }";
-      document.head.appendChild(styleTag);
-    }
     setTimeout(() => {
-      window.print();
-      if (styleTag) styleTag.remove();
+      terapkanPengaturanKertasCetak(kertas, margin, !!landscape);
+      setTimeout(() => window.print(), 50);
+    }, 30);
+  }
+  function handleWord() {
+    if (onBeforePrint) onBeforePrint();
+    setTimeout(() => unduhAreaCetakSebagaiWord(printAreaId, namaFile), 80);
+  }
+  function handleExcel() {
+    if (onBeforePrint) onBeforePrint();
+    setTimeout(() => {
+      if (onExportExcel) onExportExcel();
+      else unduhAreaCetakSebagaiExcel(printAreaId, namaFile);
     }, 80);
   }
-  return /*#__PURE__*/React.createElement(Button, {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-1.5 items-center no-print"
+  }, /*#__PURE__*/React.createElement("select", {
+    value: kertas,
+    onChange: e => setKertas(e.target.value),
+    title: "Ukuran kertas",
+    className: "border rounded-lg px-2 py-1.5 text-xs text-gray-600"
+  }, Object.keys(UKURAN_KERTAS_CETAK).map(k => /*#__PURE__*/React.createElement("option", {
+    key: k,
+    value: k
+  }, UKURAN_KERTAS_CETAK[k].label))), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: 0,
+    max: 40,
+    value: margin,
+    onChange: e => setMargin(e.target.value),
+    title: "Margin (mm)",
+    className: "border rounded-lg px-2 py-1.5 text-xs w-14 text-gray-600"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "text-[10px] text-gray-400"
+  }, "mm"), /*#__PURE__*/React.createElement(Button, {
     variant: "secondary",
-    className: "no-print",
-    onClick: handleClick
-  }, "🖨️ ", label);
+    onClick: handlePrint
+  }, "\ud83d\uddb0\ufe0f ", label, " / PDF"), showWord && /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: handleWord
+  }, "\ud83d\udcdd Word"), showExcel && /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: handleExcel
+  }, "\ud83d\udcca Excel"));
 }
 
 // Lambang / logo resmi SMK Negeri 1 Woyla - SIAKAD ESEMKASA (dipakai di login, sidebar, & PWA)
@@ -1220,7 +1313,7 @@ function GuruAbsenModule() {
     className: "space-y-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Absensi Guru / Pegawai",
-    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari Sekolah ATAU dari Cabang Dinas Pendidikan. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
+    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
   }, msg), /*#__PURE__*/React.createElement("div", {
@@ -1238,7 +1331,7 @@ function GuruAbsenModule() {
     className: "text-xs text-gray-400 mt-2"
   }, "Absen pulang baru bisa dilakukan setelah pukul ", batasPulangLabel, "."), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-3"
-  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
+  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Aceh Barat, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Aceh Barat\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
     roles: ["Kepala Sekolah", "Tata Usaha"]
   }));
 }
@@ -1488,16 +1581,6 @@ function CetakAbsensiMapelPanel({
   useEffect(() => {
     load();
   }, [mapel, kelas]);
-  function handlePrint() {
-    const styleTag = document.createElement("style");
-    styleTag.id = "temp-landscape-style-absensi-mapel";
-    styleTag.innerHTML = "@page { size: A4 landscape; margin: 10mm; }";
-    document.head.appendChild(styleTag);
-    setTimeout(() => {
-      window.print();
-      styleTag.remove();
-    }, 80);
-  }
   function handleExportExcel() {
     if (!data || data.Rekap.length === 0) return;
     const header = ["No", "Nama", "NISN", "Hadir", "Sakit", "Izin", "Alfa"];
@@ -1531,13 +1614,13 @@ function CetakAbsensiMapelPanel({
       value: k
     }, k))), React.createElement(Button, {
       onClick: load
-    }, loading ? React.createElement(Spinner, null) : "Tampilkan"), React.createElement(Button, {
-      variant: "outline",
-      onClick: handleExportExcel
-    }, "\u2b07\ufe0f Unduh Excel"), React.createElement(Button, {
-      variant: "secondary",
-      onClick: handlePrint
-    }, "\ud83d\uddb0\ufe0f Cetak Absensi"))
+    }, loading ? React.createElement(Spinner, null) : "Tampilkan"), React.createElement(PrintButton, {
+      label: "Cetak Absensi",
+      landscape: true,
+      printAreaId: printAreaId,
+      filename: "Absensi_" + mapel.replace(/\s+/g, "_") + "_" + kelas.replace(/\s+/g, "_"),
+      onExportExcel: handleExportExcel
+    }))
   }, mapelList.length === 0 || kelasList.length === 0 ? React.createElement(Alert, null, "Data Mata Pelajaran/Kelas yang Anda ampu belum diatur oleh Admin.") : null, error && React.createElement(Alert, null, error), React.createElement("div", {
     id: printAreaId
   }, React.createElement("h1", {
@@ -1581,16 +1664,6 @@ function GuruRiwayatModule() {
       ID_Guru: user.ID
     }).then(setList).catch(e => setError(e.message));
   }, []);
-  function handlePrint() {
-    const styleTag = document.createElement("style");
-    styleTag.id = "temp-landscape-style-jurnal";
-    styleTag.innerHTML = "@page { size: A4 landscape; margin: 10mm; }";
-    document.head.appendChild(styleTag);
-    setTimeout(() => {
-      window.print();
-      styleTag.remove();
-    }, 80);
-  }
   const siswaHadir = selected ? (selected.Kehadiran_Siswa || []).filter(k => k.Status === "Hadir") : [];
   const siswaTidakHadir = selected ? (selected.Kehadiran_Siswa || []).filter(k => k.Status !== "Hadir") : [];
   return /*#__PURE__*/React.createElement("div", {
@@ -1623,10 +1696,12 @@ function GuruRiwayatModule() {
     className: "text-center text-gray-400 py-6"
   }, "Belum ada jurnal.")))))), selected && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "fixed bottom-6 right-6 no-print z-40"
-  }, /*#__PURE__*/React.createElement(Button, {
-    variant: "secondary",
-    onClick: handlePrint
-  }, "🖨️ Cetak Jurnal Ini"), /*#__PURE__*/React.createElement(Button, {
+  }, /*#__PURE__*/React.createElement(PrintButton, {
+    label: "Cetak Jurnal Ini",
+    landscape: true,
+    filename: "Jurnal_Mengajar_" + (selected.Nama_Guru || "").replace(/\s+/g, "_"),
+    showExcel: false
+  }), /*#__PURE__*/React.createElement(Button, {
     variant: "outline",
     className: "ml-2",
     onClick: () => setSelected(null)
@@ -1910,9 +1985,6 @@ function CetakJurnalKelasModule() {
   useEffect(() => {
     if (kelasWali) load();
   }, []);
-  function handlePrint() {
-    window.print();
-  }
   function handleExportExcel() {
     if (data.length === 0) return;
     const header = ["Tanggal", "Jam Ke", "Mapel", "Guru", "Pertemuan Ke", "Materi", "Jumlah Hadir", "Jumlah Tidak Hadir", "Siswa Tidak Hadir"];
@@ -1946,13 +2018,11 @@ function CetakJurnalKelasModule() {
       onChange: e => setEndDate(e.target.value)
     }), React.createElement(Button, {
       onClick: load
-    }, loading ? React.createElement(Spinner, null) : "Terapkan Filter"), React.createElement(Button, {
-      variant: "outline",
-      onClick: handleExportExcel
-    }, "\u2b07\ufe0f Unduh Excel"), React.createElement(Button, {
-      variant: "secondary",
-      onClick: handlePrint
-    }, "\ud83d\uddb0\ufe0f Cetak Semua Jurnal"))
+    }, loading ? React.createElement(Spinner, null) : "Terapkan Filter"), React.createElement(PrintButton, {
+      label: "Cetak Semua Jurnal",
+      filename: "Jurnal_Mengajar_" + kelasWali.replace(/\s+/g, "_"),
+      onExportExcel: handleExportExcel
+    }))
   }, !kelasWali && React.createElement(Alert, null, "Kelas wali Anda belum diatur oleh Admin."), error && React.createElement(Alert, null, error), React.createElement("div", {
     id: "print-area"
   }, React.createElement("h1", {
@@ -2117,16 +2187,6 @@ function JurnalBimbinganModule() {
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState("");
   const [selectedCetak, setSelectedCetak] = useState(null);
-  function handlePrintBimbingan() {
-    const styleTag = document.createElement("style");
-    styleTag.id = "temp-landscape-style-bimbingan";
-    styleTag.innerHTML = "@page { size: A4 portrait; margin: 12mm; }";
-    document.head.appendChild(styleTag);
-    setTimeout(() => {
-      window.print();
-      styleTag.remove();
-    }, 80);
-  }
   useEffect(() => {
     apiCall("getMasterData", {
       scope: "siswa"
@@ -2266,10 +2326,11 @@ function JurnalBimbinganModule() {
     className: "text-center text-gray-400 py-6"
   }, "Belum ada riwayat."))), selectedCetak && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "fixed bottom-6 right-6 no-print z-40"
-  }, /*#__PURE__*/React.createElement(Button, {
-    variant: "secondary",
-    onClick: handlePrintBimbingan
-  }, "🖨️ Cetak Jurnal Ini"), /*#__PURE__*/React.createElement(Button, {
+  }, /*#__PURE__*/React.createElement(PrintButton, {
+    label: "Cetak Jurnal Ini",
+    filename: "Jurnal_Bimbingan_" + (selectedCetak.Nama_Siswa || "").replace(/\s+/g, "_"),
+    showExcel: false
+  }), /*#__PURE__*/React.createElement(Button, {
     variant: "outline",
     className: "ml-2",
     onClick: () => setSelectedCetak(null)
@@ -3143,8 +3204,17 @@ function AdminCetakAkunSiswaTab() {
     semua.forEach(s => s.Kelas && set.add(s.Kelas));
     return Array.from(set).sort();
   }, [semua]);
-  function handlePrint() {
-    window.print();
+  function handleExportExcel() {
+    if (semua.length === 0) return;
+    const header = ["Nama", "Kelas", "Username (NISN)", "Password"];
+    const rows = semua.map(s => [s.Nama, s.Kelas, s.Username, s.Password]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = header.map(() => ({
+      wch: 20
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Akun Siswa");
+    XLSX.writeFile(wb, "Akun_Siswa" + (kelas ? "_" + kelas.replace(/\s+/g, "_") : "") + ".xlsx");
   }
   return React.createElement(Card, {
     title: "Cetak Akun & QR Code Siswa",
@@ -3162,10 +3232,11 @@ function AdminCetakAkunSiswaTab() {
       value: k
     }, k))), React.createElement(Button, {
       onClick: load
-    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(Button, {
-      variant: "secondary",
-      onClick: handlePrint
-    }, "\ud83d\uddb0\ufe0f Cetak Semua Kartu Akun"))
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(PrintButton, {
+      label: "Cetak Semua Kartu Akun",
+      filename: "Akun_Siswa" + (kelas ? "_" + kelas.replace(/\s+/g, "_") : ""),
+      onExportExcel: handleExportExcel
+    }))
   }, error && React.createElement(Alert, null, error), React.createElement("p", {
     className: "text-xs text-gray-400 mb-3 no-print"
   }, "Setiap kartu berisi Nama, Kelas, Username (NISN), Password, dan QR Code siswa. QR Code berlaku untuk hari ini - jika perlu diserahkan langsung, cetak dan bagikan pada hari yang sama."), React.createElement("div", {
@@ -3245,8 +3316,17 @@ function AdminCetakKartuTab() {
     semua.forEach(s => s.Kelas_Diampu && set.add(s.Kelas_Diampu));
     return Array.from(set).sort();
   }, [semua]);
-  function handlePrint() {
-    window.print();
+  function handleExportExcel() {
+    if (semua.length === 0) return;
+    const header = ["Nama", "NISN", "Kelas", "Tempat Lahir", "Tanggal Lahir", "Alamat"];
+    const rows = semua.map(s => [s.Nama, s.Identitas_NIP_NISN, s.Kelas_Diampu, s.Tempat_Lahir || "-", s.Tanggal_Lahir ? formatTanggalIndo(s.Tanggal_Lahir) : "-", s.Alamat_Siswa || "-"]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws["!cols"] = header.map(() => ({
+      wch: 20
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Data Siswa");
+    XLSX.writeFile(wb, "Data_Kartu_Siswa" + (kelas ? "_" + kelas.replace(/\s+/g, "_") : "") + ".xlsx");
   }
   return React.createElement(Card, {
     title: "Cetak Kartu Pelajar & Kartu Perpustakaan",
@@ -3264,10 +3344,11 @@ function AdminCetakKartuTab() {
       value: k
     }, k))), React.createElement(Button, {
       onClick: load
-    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(Button, {
-      variant: "secondary",
-      onClick: handlePrint
-    }, "\ud83d\uddb0\ufe0f Cetak Semua Kartu"))
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"), React.createElement(PrintButton, {
+      label: "Cetak Semua Kartu",
+      filename: "Kartu_Pelajar_Perpustakaan" + (kelas ? "_" + kelas.replace(/\s+/g, "_") : ""),
+      onExportExcel: handleExportExcel
+    }))
   }, error && React.createElement(Alert, null, error), React.createElement("p", {
     className: "text-xs text-gray-400 mb-3 no-print"
   }, "Setiap siswa mendapat 1 Kartu Pelajar (halaman pertama) dan 1 Kartu Perpustakaan (halaman kedua), keduanya dalam satu file dengan urutan siswa yang sama. Untuk hasil bolak-balik, aktifkan opsi \"Cetak dua sisi\" (duplex) di kotak dialog cetak browser Anda. Jika posisi baliknya terbalik/tidak sesuai, coba ganti pengaturan \"flip on short edge\" / \"flip on long edge\" pada dialog tersebut sesuai jenis printer Anda."), React.createElement("div", {
@@ -3459,30 +3540,24 @@ function AdminRekapBulananTab({
   }, [bulan, tahun]);
   const judul = tipe === "guru" ? "Rekap Absensi Guru & Pegawai" : "Rekap Absensi Siswa";
 
-  // Cetak dalam satu halaman: kertas A4 landscape, lalu skala tabel otomatis agar muat tingginya
-  function handlePrint() {
-    const styleTag = document.createElement("style");
-    styleTag.id = "temp-landscape-style";
-    styleTag.innerHTML = "@page { size: A4 landscape; margin: 6mm; }";
-    document.head.appendChild(styleTag);
+  // Cetak dalam satu halaman: skala tabel otomatis agar tinggi tabel muat di kertas
+  function prepareCetakScale() {
     const el = printAreaRef.current;
-    let originalStyle = "";
-    if (el) {
-      originalStyle = el.getAttribute("style") || "";
-      el.style.transform = "none";
-      el.style.width = "auto";
-      const availableHeightPx = (210 - 14) / 25.4 * 96; // tinggi area cetak A4 landscape (setelah margin)
-      const contentHeight = el.scrollHeight;
-      const scale = Math.min(1, availableHeightPx / contentHeight);
-      el.style.transformOrigin = "top left";
-      el.style.transform = "scale(" + scale + ")";
-      el.style.width = 100 / scale + "%";
+    if (!el) return;
+    const originalStyle = el.getAttribute("style") || "";
+    el.style.transform = "none";
+    el.style.width = "auto";
+    const availableHeightPx = (297 - 12) / 25.4 * 96; // aproksimasi tinggi kertas landscape setelah margin
+    const contentHeight = el.scrollHeight;
+    const scale = Math.min(1, availableHeightPx / contentHeight);
+    el.style.transformOrigin = "top left";
+    el.style.transform = "scale(" + scale + ")";
+    el.style.width = 100 / scale + "%";
+    function reset() {
+      el.setAttribute("style", originalStyle);
+      window.removeEventListener("afterprint", reset);
     }
-    setTimeout(() => {
-      window.print();
-      styleTag.remove();
-      if (el) el.setAttribute("style", originalStyle);
-    }, 80);
+    window.addEventListener("afterprint", reset);
   }
 
   // Unduh rekap yang sedang tampil sebagai file Excel (.xlsx), memakai library SheetJS
@@ -3537,15 +3612,13 @@ function AdminRekapBulananTab({
     placeholder: "cth: X RPL 1"
   }), /*#__PURE__*/React.createElement(Button, {
     onClick: load
-  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Tampilkan"), data && /*#__PURE__*/React.createElement(Button, {
-    variant: "secondary",
-    className: "no-print",
-    onClick: handlePrint
-  }, "🖨️ Cetak ", judul, " (1 Halaman)"), data && /*#__PURE__*/React.createElement(Button, {
-    variant: "outline",
-    className: "no-print",
-    onClick: handleExportExcel
-  }, "⬇️ Unduh Excel (.xlsx)")), data && /*#__PURE__*/React.createElement("div", {
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Tampilkan"), data && /*#__PURE__*/React.createElement(PrintButton, {
+    label: "Cetak " + judul,
+    landscape: true,
+    onBeforePrint: prepareCetakScale,
+    onExportExcel: handleExportExcel,
+    filename: (tipe === "guru" ? "Rekap_Absensi_Guru_" : "Rekap_Absensi_Siswa_") + NAMA_BULAN[bulan - 1] + "_" + tahun
+  })), data && /*#__PURE__*/React.createElement("div", {
     className: "overflow-x-auto"
   }, /*#__PURE__*/React.createElement("table", {
     className: "text-xs border-collapse w-full"
@@ -4018,6 +4091,7 @@ function GuruWali7KaihModule() {
     }, "⬇️ Unduh Excel"), /*#__PURE__*/React.createElement(PrintButton, {
       label: "Cetak Tabel",
       landscape: true
+    showExcel: false
     }), /*#__PURE__*/React.createElement(Button, {
       onClick: load
     }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Muat Ulang"))
@@ -4076,6 +4150,7 @@ function WakaKesiswaan7KaihModule() {
     }, "⬇️ Unduh Excel"), /*#__PURE__*/React.createElement(PrintButton, {
       label: "Cetak Tabel",
       landscape: true
+    showExcel: false
     }))
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
     id: "print-area"
@@ -4156,6 +4231,7 @@ function RekapKehadiranPerKelasModule() {
     }, "\u2b07\ufe0f Unduh Excel"), React.createElement(PrintButton, {
       label: "Cetak Rekap",
       landscape: true
+    showExcel: false
     }))
   }, error && React.createElement(Alert, null, error), React.createElement("div", {
     id: "print-area"
@@ -5595,6 +5671,7 @@ function PklMonitoringPanel({
     }, "\u2b07\ufe0f Unduh Excel"), React.createElement(PrintButton, {
       label: "Cetak Kehadiran",
       landscape: true
+    showExcel: false
     }))
   }, React.createElement("div", {
     id: "print-area"
