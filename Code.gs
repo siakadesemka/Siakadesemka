@@ -28,8 +28,8 @@ const CONFIG = {
   SCHOOL_LNG: 96.040818,      // Ganti dengan koordinat sekolah Anda
   CABANG_DINAS_LAT: 4.176717348593045,  // Koordinat Cabang Dinas Pendidikan (lokasi alternatif absen guru)
   CABANG_DINAS_LNG: 96.13676851392087,
-  RADIUS_GURU_METER: 500,
-  RADIUS_PKL_METER: 100,
+  RADIUS_GURU_METER: 150,
+  RADIUS_PKL_METER: 30,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
   TIMEZONE: "GMT+7",
 
@@ -106,7 +106,8 @@ const SHEET_NAMES = {
   ABSEN_PERPUSTAKAAN: "Absen_Perpustakaan",
   ABSEN_LITERASI_QURAN: "Absen_Literasi_Quran",
   DOKUMEN_SEKOLAH: "Dokumen_Sekolah",
-  KEHADIRAN_MENGAJAR_GURU: "Kehadiran_Mengajar_Guru"
+  KEHADIRAN_MENGAJAR_GURU: "Kehadiran_Mengajar_Guru",
+  TINDAK_LANJUT_SISWA: "Tindak_Lanjut_Siswa"
 };
 
 // Definisi header setiap sheet. setupDatabase() akan membuat sheet + header
@@ -188,6 +189,12 @@ const SHEET_SCHEMAS = {
     "ID", "Tanggal", "Hari", "ID_Guru", "Nama_Guru", "Kelas", "Mapel", "Jam_Ke",
     "Status", "Keterangan", "Diisi_Oleh", "ID_Piket", "Nama_Piket",
     "Diteruskan_Ke_Guru", "CreatedAt"
+  ],
+  // Riwayat tindak lanjut Wali Kelas terhadap siswa yang poin pelanggarannya mencapai
+  // tingkat tertentu (Teguran / Panggilan Orang Tua / SP1 / SP2 / Skorsing dsb).
+  Tindak_Lanjut_Siswa: [
+    "ID", "ID_Siswa", "Nama_Siswa", "Kelas", "Tanggal", "Total_Poin_Saat_Itu", "Tingkat",
+    "Jenis_Tindakan", "Keterangan", "ID_Wali_Kelas", "Nama_Wali_Kelas", "CreatedAt"
   ]
 };
 
@@ -353,7 +360,10 @@ function doPost(e) {
     isiKeteranganPiket: apiIsiKeteranganPiket,
     getNotifikasiPiketGuru: apiGetNotifikasiPiketGuru,
     isiKeteranganGuruSendiri: apiIsiKeteranganGuruSendiri,
-    getRekapKehadiranMengajarHarian: apiGetRekapKehadiranMengajarHarian
+    getRekapKehadiranMengajarHarian: apiGetRekapKehadiranMengajarHarian,
+
+    saveTindakLanjut: apiSaveTindakLanjut,
+    getRiwayatTindakLanjut: apiGetRiwayatTindakLanjut
   };
 
   const handler = routes[action];
@@ -1369,6 +1379,22 @@ function hitungTotalPoin(catatan) {
   }, 0);
 }
 
+// Ambang batas tingkat pelanggaran & rekomendasi tindak lanjut standar SMK, dipakai
+// Wali Kelas untuk menentukan langkah pembinaan sesuai akumulasi poin siswa. Admin
+// bisa menyesuaikan angka ambang batas ini langsung di kode jika kebijakan sekolah
+// berbeda.
+const AMBANG_TINDAK_LANJUT = [
+  { min: 100, Tingkat: "Sangat Berat", Rekomendasi: "Skorsing / Dikembalikan ke Orang Tua (Rapat Dewan Guru)" },
+  { min: 75, Tingkat: "Berat", Rekomendasi: "Surat Peringatan 2 (SP2) & Perjanjian Tertulis Bermaterai" },
+  { min: 50, Tingkat: "Sedang", Rekomendasi: "Pemanggilan Orang Tua & Surat Peringatan 1 (SP1)" },
+  { min: 25, Tingkat: "Ringan", Rekomendasi: "Teguran / Peringatan Lisan oleh Wali Kelas" },
+  { min: 0, Tingkat: "Aman", Rekomendasi: "Belum perlu tindak lanjut khusus" }
+];
+function tentukanTingkatPelanggaran(totalPoin) {
+  const cocok = AMBANG_TINDAK_LANJUT.find(function (a) { return totalPoin >= a.min; });
+  return cocok || AMBANG_TINDAK_LANJUT[AMBANG_TINDAK_LANJUT.length - 1];
+}
+
 // payload: { ID_Siswa } -> riwayat pelanggaran + total poin siswa tsb (dipakai di akun siswa, wali kelas, guru wali)
 function apiGetPoinPelanggaranSiswa(payload) {
   const catatan = readSheetAsObjects(SHEET_NAMES.POIN_PELANGGARAN)
@@ -1377,16 +1403,31 @@ function apiGetPoinPelanggaranSiswa(payload) {
   return { totalPoin: hitungTotalPoin(catatan), riwayat: catatan };
 }
 
-// payload: { Kelas } -> rekap poin seluruh siswa satu kelas (dipakai Wali Kelas)
+// payload: { Kelas } -> rekap poin seluruh siswa satu kelas (dipakai Wali Kelas), lengkap
+// dengan Tingkat & Rekomendasi tindak lanjut sesuai akumulasi poin.
 function apiGetPoinPelanggaranKelas(payload) {
   const users = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
     return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
   });
   const semuaCatatan = readSheetAsObjects(SHEET_NAMES.POIN_PELANGGARAN);
+  const semuaTindakLanjut = readSheetAsObjects(SHEET_NAMES.TINDAK_LANJUT_SISWA);
   return users.map(function (s) {
     const catatan = semuaCatatan.filter(function (r) { return r.ID_Siswa === s.ID; })
       .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
-    return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, totalPoin: hitungTotalPoin(catatan), riwayat: catatan };
+    const totalPoin = hitungTotalPoin(catatan);
+    const tingkat = tentukanTingkatPelanggaran(totalPoin);
+    const riwayatTindakLanjut = semuaTindakLanjut.filter(function (t) { return t.ID_Siswa === s.ID; })
+      .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+    return {
+      ID_Siswa: s.ID,
+      Nama_Siswa: s.Nama,
+      totalPoin: totalPoin,
+      riwayat: catatan,
+      Tingkat: tingkat.Tingkat,
+      Rekomendasi: tingkat.Rekomendasi,
+      JumlahTindakLanjut: riwayatTindakLanjut.length,
+      TindakLanjutTerakhir: riwayatTindakLanjut[0] || null
+    };
   }).sort(function (a, b) { return b.totalPoin - a.totalPoin; });
 }
 
@@ -1402,6 +1443,40 @@ function apiGetPoinPelanggaranSemua(payload) {
     const catatan = semuaCatatan.filter(function (r) { return r.ID_Siswa === s.ID; });
     return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Kelas: s.Kelas_Diampu, totalPoin: hitungTotalPoin(catatan), jumlahPelanggaran: catatan.filter(function (r) { return r.Tipe === "Tambah"; }).length };
   }).sort(function (a, b) { return b.totalPoin - a.totalPoin; });
+}
+
+// payload: { ID_Siswa, Nama_Siswa, Kelas, Jenis_Tindakan, Keterangan, ID_Wali_Kelas,
+// Nama_Wali_Kelas } -> Wali Kelas mencatat tindak lanjut yang diambil terhadap siswa
+// (mis. Teguran, Panggilan Orang Tua, SP1/SP2, Skorsing), Total_Poin_Saat_Itu & Tingkat
+// dihitung otomatis dari poin siswa saat tindakan dicatat.
+function apiSaveTindakLanjut(payload) {
+  const catatan = readSheetAsObjects(SHEET_NAMES.POIN_PELANGGARAN)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; });
+  const totalPoin = hitungTotalPoin(catatan);
+  const tingkat = tentukanTingkatPelanggaran(totalPoin);
+  const obj = {
+    ID: generateId("TDL"),
+    ID_Siswa: payload.ID_Siswa,
+    Nama_Siswa: payload.Nama_Siswa,
+    Kelas: payload.Kelas,
+    Tanggal: formatDateOnly(new Date()),
+    Total_Poin_Saat_Itu: totalPoin,
+    Tingkat: tingkat.Tingkat,
+    Jenis_Tindakan: payload.Jenis_Tindakan,
+    Keterangan: payload.Keterangan || "",
+    ID_Wali_Kelas: payload.ID_Wali_Kelas,
+    Nama_Wali_Kelas: payload.Nama_Wali_Kelas,
+    CreatedAt: new Date()
+  };
+  appendRowFromObject(SHEET_NAMES.TINDAK_LANJUT_SISWA, obj);
+  return { status: "Tindak lanjut '" + payload.Jenis_Tindakan + "' untuk " + payload.Nama_Siswa + " tersimpan." };
+}
+
+// payload: { ID_Siswa } -> riwayat tindak lanjut seorang siswa (dipakai Wali Kelas untuk cetak/lihat riwayat)
+function apiGetRiwayatTindakLanjut(payload) {
+  return readSheetAsObjects(SHEET_NAMES.TINDAK_LANJUT_SISWA)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
 
 // ============================================================================
@@ -2036,9 +2111,36 @@ function namaHariDariTanggal(tanggalStr) {
   return HARI[d.getDay()];
 }
 
+// Mengelompokkan slot roster satu hari (per guru) yang Kelas & Mapel-nya sama dan
+// Jam_Ke-nya berurutan (mis. jam ke 1 & 2 mapel/kelas yang sama) menjadi SATU slot
+// bertanda "1-2" - supaya tampilannya sama persis dengan cara guru menulis Jam_Ke di
+// Jurnal Mengajar (guru mengetik bebas, mis. "1-2"), sehingga piket tidak melihat 2
+// baris terpisah untuk 1 pertemuan yang sama.
+function kelompokkanRosterPerHari(roster, hari) {
+  const terurut = (roster || []).filter(function (r) { return r.Hari === hari; }).slice().sort(function (a, b) {
+    return Number(a.JamKe) - Number(b.JamKe);
+  });
+  const hasil = [];
+  terurut.forEach(function (r) {
+    const jamNum = Number(r.JamKe);
+    const last = hasil[hasil.length - 1];
+    if (last && last.Kelas === r.Kelas && last.Mapel === r.Mapel && jamNum === last._jamAkhir + 1) {
+      last._jamAkhir = jamNum;
+      last.Jam_Ke = last._jamAwal === last._jamAkhir ? String(last._jamAwal) : (last._jamAwal + "-" + last._jamAkhir);
+    } else {
+      hasil.push({ Kelas: r.Kelas, Mapel: r.Mapel, _jamAwal: jamNum, _jamAkhir: jamNum, Jam_Ke: String(jamNum) });
+    }
+  });
+  return hasil;
+}
+
 // payload: { Tanggal } -> seluruh slot jadwal mengajar SEMUA guru pada tanggal tsb,
 // ditandai mana yang sudah mengisi Jurnal Mengajar dan mana yang sudah
 // ditindaklanjuti piket (diteruskan / diisi keterangan). Dipakai oleh akun Guru Piket.
+// PENTING: kecocokan "sudah mengisi jurnal" dicek berdasarkan ID_Guru+Kelas+Mapel+
+// Tanggal SAJA (bukan Jam_Ke persis), karena Jam_Ke pada Jurnal Mengajar diketik
+// bebas oleh guru (mis. "1-2") sehingga tidak selalu identik dgn Jam_Ke per-slot di
+// roster. Ini membuat status "sudah mengisi" selalu sinkron dengan jurnal guru.
 function apiGetJadwalMengajarHarian(payload) {
   const tanggal = payload.Tanggal || formatDateOnly(new Date());
   const hari = namaHariDariTanggal(tanggal);
@@ -2057,20 +2159,20 @@ function apiGetJadwalMengajarHarian(payload) {
   const slotList = [];
   users.forEach(function (u) {
     const roster = safeParseJson(u.Roster_Mengajar_JSON);
-    roster.forEach(function (r) {
-      if (r.Hari !== hari) return;
+    const kelompok = kelompokkanRosterPerHari(roster, hari);
+    kelompok.forEach(function (grp) {
       const sudahJurnal = jurnalHariItu.some(function (j) {
-        return j.ID_Guru === u.ID && j.Kelas === r.Kelas && j.Mapel === r.Mapel && String(j.Jam_Ke) === String(r.JamKe);
+        return j.ID_Guru === u.ID && j.Kelas === grp.Kelas && j.Mapel === grp.Mapel;
       });
       const keterangan = keteranganHariItu.find(function (k) {
-        return k.ID_Guru === u.ID && k.Kelas === r.Kelas && k.Mapel === r.Mapel && String(k.Jam_Ke) === String(r.JamKe);
+        return k.ID_Guru === u.ID && k.Kelas === grp.Kelas && k.Mapel === grp.Mapel;
       });
       slotList.push({
         ID_Guru: u.ID,
         Nama_Guru: u.Nama,
-        Kelas: r.Kelas,
-        Mapel: r.Mapel,
-        Jam_Ke: r.JamKe,
+        Kelas: grp.Kelas,
+        Mapel: grp.Mapel,
+        Jam_Ke: grp.Jam_Ke,
         Tanggal: tanggal,
         Hari: hari,
         SudahMengisiJurnal: sudahJurnal,
@@ -2145,14 +2247,26 @@ function apiIsiKeteranganPiket(payload) {
   return { status: "Keterangan '" + payload.Status + "' untuk " + payload.Nama_Guru + " tersimpan." };
 }
 
-// payload: { ID_Guru } -> daftar pesan yang DITERUSKAN piket ke guru ybs dan BELUM diisi
-// keterangannya sendiri (Status masih kosong). Ditampilkan sebagai notifikasi di akun guru.
+// payload: { ID_Guru } -> daftar pesan yang DITERUSKAN piket ke guru ybs dan BELUM
+// "selesai" - baik karena guru belum isi keterangan sendiri, MAUPUN belum mengisi
+// jurnal mengajar untuk Kelas+Mapel+Tanggal tsb. Begitu guru mengisi jurnal mengajar
+// (lewat menu Isi Jurnal Mengajar seperti biasa), notifikasi ini otomatis hilang
+// dengan sendirinya tanpa perlu tindakan tambahan.
 function apiGetNotifikasiPiketGuru(payload) {
-  return readSheetAsObjects(SHEET_NAMES.KEHADIRAN_MENGAJAR_GURU)
+  const pending = readSheetAsObjects(SHEET_NAMES.KEHADIRAN_MENGAJAR_GURU)
     .filter(function (r) {
       return r.ID_Guru === payload.ID_Guru && r.Diteruskan_Ke_Guru === "Ya" && !r.Status;
-    })
-    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+    });
+  if (pending.length === 0) return [];
+  const jurnalGuru = readSheetAsObjects(SHEET_NAMES.JURNAL_MENGAJAR).filter(function (j) {
+    return j.ID_Guru === payload.ID_Guru;
+  });
+  return pending.filter(function (p) {
+    const sudahIsiJurnal = jurnalGuru.some(function (j) {
+      return formatDateOnly(j.Tanggal) === formatDateOnly(p.Tanggal) && j.Kelas === p.Kelas && j.Mapel === p.Mapel;
+    });
+    return !sudahIsiJurnal;
+  }).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
 
 // payload: { ID (baris Kehadiran_Mengajar_Guru), Status, Keterangan } -> guru mengisi

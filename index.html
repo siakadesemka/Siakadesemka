@@ -161,7 +161,7 @@ function ucapkanTerimaKasih() {
   try {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel(); // hentikan ucapan sebelumnya supaya tidak menumpuk
-    const utter = new SpeechSynthesisUtterance("Terima kasih");
+    const utter = new SpeechSynthesisUtterance("Trimeung geunaseh");
     utter.lang = "id-ID";
     utter.rate = 1;
     utter.volume = 1;
@@ -620,6 +620,12 @@ function CameraCapture({
    AUTH CONTEXT
    ============================================================================ */
 const AuthContext = createContext(null);
+// Konteks navigasi ringan supaya komponen bersarang (mis. notifikasi di Beranda Guru)
+// bisa berpindah menu tanpa perlu prop-drilling dari AppShell.
+const NavContext = createContext(null);
+function useNav() {
+  return useContext(NavContext) || function () {};
+}
 function useAuth() {
   return useContext(AuthContext);
 }
@@ -779,12 +785,8 @@ const ROLE_MENU = {
     icon: "📚"
   }, {
     key: "guru_piket",
-    label: "Piket - Poin Pelanggaran",
+    label: "Piket",
     icon: "🚨"
-  }, {
-    key: "guru_piket_jurnal",
-    label: "Piket - Jurnal Guru",
-    icon: "🔔"
   }, {
     key: "guru_pkl_monitoring",
     label: "Monitoring Jurnal PKL",
@@ -1218,9 +1220,11 @@ function AppShell() {
     value: r
   }, r)))), /*#__PURE__*/React.createElement("div", {
     className: "p-4 md:p-6 flex-1 overflow-y-auto"
+  }, /*#__PURE__*/React.createElement(NavContext.Provider, {
+    value: navigateTo
   }, /*#__PURE__*/React.createElement(PageRouter, {
     page: page
-  }))));
+  })))));
 }
 function PageRouter({
   page
@@ -1244,8 +1248,7 @@ function PageRouter({
     pkl_jurnal: SiswaPklJurnalModule,
     manajemen: ManajemenModule,
     waka_hubmi_pkl: WakaHubmiPklModule,
-    guru_piket: GuruPiketModule,
-    guru_piket_jurnal: GuruPiketJurnalMonitorModule,
+    guru_piket: GuruPiketGabunganModule,
     guru_pkl_monitoring: GuruPembimbingPklMonitoringModule,
     wali_poin: WaliPoinModule,
     siswa_poin: SiswaPoinModule,
@@ -1409,7 +1412,7 @@ function GuruAbsenModule() {
     className: "space-y-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Absensi Guru / Pegawai",
-    subtitle: "Absen hanya bisa dilakukan dalam radius 500 meter dari Sekolah ATAU dari Cabang Dinas Pendidikan. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
+    subtitle: "Absen hanya bisa dilakukan dalam radius 150 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
   }, msg), /*#__PURE__*/React.createElement("div", {
@@ -1427,7 +1430,7 @@ function GuruAbsenModule() {
     className: "text-xs text-gray-400 mt-2"
   }, "Absen pulang baru bisa dilakukan setelah pukul ", batasPulangLabel, "."), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-3"
-  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
+  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
     roles: ["Kepala Sekolah", "Tata Usaha"]
   }));
 }
@@ -3888,6 +3891,20 @@ function AdminRekapBulananTab({
    MODUL PIKET GURU: INPUT POIN PELANGGARAN SISWA
    ============================================================================ */
 const NAMA_HARI_INI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
+// Menggabungkan dua fungsi Piket (Poin Pelanggaran & Jurnal Guru) dalam satu menu
+// dengan tab, supaya sidebar tidak punya 2 menu "Piket" terpisah.
+function GuruPiketGabunganModule() {
+  const [tab, setTab] = useState("pelanggaran");
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 mb-4 no-print"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "pelanggaran" ? "primary" : "outline",
+    onClick: () => setTab("pelanggaran")
+  }, "🚨 Poin Pelanggaran"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "jurnal" ? "primary" : "outline",
+    onClick: () => setTab("jurnal")
+  }, "🔔 Jurnal Guru")), tab === "pelanggaran" ? /*#__PURE__*/React.createElement(GuruPiketModule, null) : /*#__PURE__*/React.createElement(GuruPiketJurnalMonitorModule, null));
+}
 function GuruPiketModule() {
   const {
     user
@@ -4219,6 +4236,8 @@ function NotifikasiPiketItem({
   item,
   onSaved
 }) {
+  const navigateTo = useNav();
+  const [mode, setMode] = useState(""); // "" | "tidak_masuk"
   const [status, setStatus] = useState("Tidak Mengajar");
   const [keterangan, setKeterangan] = useState("");
   const [loading, setLoading] = useState(false);
@@ -4245,7 +4264,14 @@ function NotifikasiPiketItem({
     className: "font-medium"
   }, "Piket (", item.Nama_Piket, ") menanyakan kehadiran mengajar Anda:"), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-500 mb-2"
-  }, formatTanggalIndo(item.Tanggal), " · Jam ke ", item.Jam_Ke, " · ", item.Kelas, " · ", item.Mapel), /*#__PURE__*/React.createElement("div", {
+  }, formatTanggalIndo(item.Tanggal), " · Jam ke ", item.Jam_Ke, " · ", item.Kelas, " · ", item.Mapel), mode === "" && /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement(Button, {
+    onClick: () => navigateTo("guru_jurnal")
+  }, "✅ Isi Jurnal Sekarang"), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setMode("tidak_masuk")
+  }, "❌ Tidak Masuk Mengajar")), mode === "tidak_masuk" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "grid sm:grid-cols-2 gap-2"
   }, /*#__PURE__*/React.createElement(Select, {
     label: "Status",
@@ -4258,10 +4284,15 @@ function NotifikasiPiketItem({
     value: keterangan,
     onChange: e => setKeterangan(e.target.value),
     placeholder: "cth: Sedang tugas dinas luar."
-  })), /*#__PURE__*/React.createElement(Button, {
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2"
+  }, /*#__PURE__*/React.createElement(Button, {
     onClick: simpan,
     disabled: loading
-  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Keterangan"));
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Keterangan"), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setMode("")
+  }, "Batal"))));
 }
 
 // Rekap untuk Waka Kurikulum: tabel guru masuk & tidak masuk per tanggal, lengkap
@@ -4423,6 +4454,91 @@ function SiswaPoinModule() {
     riwayat: data.riwayat
   }));
 }
+// Warna badge sesuai tingkat pelanggaran (Aman/Ringan/Sedang/Berat/Sangat Berat)
+function warnaTingkat(tingkat) {
+  const peta = {
+    "Sangat Berat": "red",
+    "Berat": "red",
+    "Sedang": "amber",
+    "Ringan": "amber",
+    "Aman": "green"
+  };
+  return peta[tingkat] || "gray";
+}
+
+// Form Tindak Lanjut untuk seorang siswa - dipakai Wali Kelas mencatat tindakan
+// pembinaan (Teguran/Panggilan Ortu/SP1/SP2/Skorsing dsb) sesuai tingkat poinnya.
+function TindakLanjutForm({
+  siswa,
+  onSaved
+}) {
+  const {
+    user
+  } = useAuth();
+  const [jenis, setJenis] = useState("Teguran / Peringatan Lisan");
+  const [keterangan, setKeterangan] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const opsiTindakan = ["Teguran / Peringatan Lisan", "Pemanggilan Orang Tua", "Surat Peringatan 1 (SP1)", "Surat Peringatan 2 (SP2)", "Perjanjian Tertulis Bermaterai", "Skorsing", "Dikembalikan ke Orang Tua", "Lainnya"];
+  async function simpan() {
+    setLoading(true);
+    setError("");
+    try {
+      await apiCall("saveTindakLanjut", {
+        ID_Siswa: siswa.ID_Siswa,
+        Nama_Siswa: siswa.Nama_Siswa,
+        Kelas: siswa.Kelas,
+        Jenis_Tindakan: jenis,
+        Keterangan: keterangan,
+        ID_Wali_Kelas: user.ID,
+        Nama_Wali_Kelas: user.Nama
+      });
+      setKeterangan("");
+      onSaved();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mt-2 border-t pt-2 space-y-2"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement(Select, {
+    label: "Jenis Tindak Lanjut",
+    value: jenis,
+    onChange: e => setJenis(e.target.value),
+    options: opsiTindakan
+  }), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Keterangan",
+    rows: "2",
+    value: keterangan,
+    onChange: e => setKeterangan(e.target.value),
+    placeholder: "Catatan pembinaan / hasil pertemuan dengan siswa atau orang tua..."
+  }), /*#__PURE__*/React.createElement(Button, {
+    onClick: simpan,
+    disabled: loading
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Tindak Lanjut"));
+}
+
+// Riwayat tindak lanjut yang sudah dicatat untuk seorang siswa
+function RiwayatTindakLanjutList({
+  riwayat
+}) {
+  if (!riwayat || riwayat.length === 0) return /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 mt-2"
+  }, "Belum ada tindak lanjut tercatat.");
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mt-2 space-y-1.5"
+  }, riwayat.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "text-xs bg-gray-50 rounded-lg p-2"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, r.Jenis_Tindakan, " · ", formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-500"
+  }, "Poin saat itu: ", r.Total_Poin_Saat_Itu, " (", r.Tingkat, ")", r.Keterangan ? " · " + r.Keterangan : ""))));
+}
+
 function WaliPoinModule() {
   const {
     user
@@ -4431,13 +4547,29 @@ function WaliPoinModule() {
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(null);
-  useEffect(() => {
+  const [tindakLanjutFor, setTindakLanjutFor] = useState(null);
+  const [riwayatTindakLanjut, setRiwayatTindakLanjut] = useState({});
+  function load() {
     if (kelasWali) apiCall("getPoinPelanggaranKelas", {
       Kelas: kelasWali
     }).then(setData).catch(e => setError(e.message));
-  }, [kelasWali]);
+  }
+  useEffect(load, [kelasWali]);
+  function toggleExpand(s) {
+    const next = expanded === s.ID_Siswa ? null : s.ID_Siswa;
+    setExpanded(next);
+    if (next && !riwayatTindakLanjut[s.ID_Siswa]) {
+      apiCall("getRiwayatTindakLanjut", {
+        ID_Siswa: s.ID_Siswa
+      }).then(r => setRiwayatTindakLanjut(prev => ({
+        ...prev,
+        [s.ID_Siswa]: r
+      }))).catch(() => {});
+    }
+  }
   return /*#__PURE__*/React.createElement(Card, {
-    title: "Poin Pelanggaran Kelas " + kelasWali
+    title: "Poin Pelanggaran Kelas " + kelasWali,
+    subtitle: "Tingkat & tindak lanjut menyesuaikan otomatis dengan akumulasi poin siswa"
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
     className: "divide-y"
   }, data.map(s => /*#__PURE__*/React.createElement("div", {
@@ -4445,15 +4577,41 @@ function WaliPoinModule() {
     className: "py-2"
   }, /*#__PURE__*/React.createElement("button", {
     className: "w-full flex justify-between items-center text-sm",
-    onClick: () => setExpanded(expanded === s.ID_Siswa ? null : s.ID_Siswa)
+    onClick: () => toggleExpand(s)
   }, /*#__PURE__*/React.createElement("span", {
     className: "font-medium"
-  }, s.Nama_Siswa), /*#__PURE__*/React.createElement(Badge, {
+  }, s.Nama_Siswa), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(Badge, {
     color: s.totalPoin > 0 ? "red" : "green"
-  }, s.totalPoin, " poin")), expanded === s.ID_Siswa && /*#__PURE__*/React.createElement("div", {
+  }, s.totalPoin, " poin"), /*#__PURE__*/React.createElement(Badge, {
+    color: warnaTingkat(s.Tingkat)
+  }, s.Tingkat))), expanded === s.ID_Siswa && /*#__PURE__*/React.createElement("div", {
     className: "mt-2 pl-2 border-l-2"
-  }, /*#__PURE__*/React.createElement(RiwayatPoinList, {
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-500 mb-2 italic"
+  }, "Rekomendasi: ", s.Rekomendasi), /*#__PURE__*/React.createElement(RiwayatPoinList, {
     riwayat: s.riwayat
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "mt-2 flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs font-semibold text-gray-600"
+  }, "Riwayat Tindak Lanjut"), tindakLanjutFor !== s.ID_Siswa && /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => setTindakLanjutFor(s.ID_Siswa)
+  }, "+ Tindak Lanjut")), /*#__PURE__*/React.createElement(RiwayatTindakLanjutList, {
+    riwayat: riwayatTindakLanjut[s.ID_Siswa]
+  }), tindakLanjutFor === s.ID_Siswa && /*#__PURE__*/React.createElement(TindakLanjutForm, {
+    siswa: s,
+    onSaved: () => {
+      setTindakLanjutFor(null);
+      apiCall("getRiwayatTindakLanjut", {
+        ID_Siswa: s.ID_Siswa
+      }).then(r => setRiwayatTindakLanjut(prev => ({
+        ...prev,
+        [s.ID_Siswa]: r
+      })));
+    }
   })))), data.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data siswa di kelas ini.")));
