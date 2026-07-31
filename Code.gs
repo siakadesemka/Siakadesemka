@@ -28,7 +28,7 @@ const CONFIG = {
   SCHOOL_LNG: 96.040818,      // Ganti dengan koordinat sekolah Anda
   CABANG_DINAS_LAT: 4.176717348593045,  // Koordinat Cabang Dinas Pendidikan (lokasi alternatif absen guru)
   CABANG_DINAS_LNG: 96.13676851392087,
-  RADIUS_GURU_METER: 500,
+  RADIUS_GURU_METER: 150,
   RADIUS_PKL_METER: 100,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
   TIMEZONE: "GMT+7",
@@ -105,7 +105,8 @@ const SHEET_NAMES = {
   POIN_PELANGGARAN: "Poin_Pelanggaran_Siswa",
   ABSEN_PERPUSTAKAAN: "Absen_Perpustakaan",
   ABSEN_LITERASI_QURAN: "Absen_Literasi_Quran",
-  DOKUMEN_SEKOLAH: "Dokumen_Sekolah"
+  DOKUMEN_SEKOLAH: "Dokumen_Sekolah",
+  PIKET_KETIDAKHADIRAN_GURU: "Piket_Ketidakhadiran_Guru"
 };
 
 // Definisi header setiap sheet. setupDatabase() akan membuat sheet + header
@@ -179,6 +180,10 @@ const SHEET_SCHEMAS = {
   ],
   Dokumen_Sekolah: [
     "ID", "Judul", "Deskripsi", "Kategori", "URL", "ID_Pengunggah", "Nama_Pengunggah", "CreatedAt"
+  ],
+  Piket_Ketidakhadiran_Guru: [
+    "ID", "Tanggal", "Hari", "ID_Guru", "Nama_Guru", "Kelas", "Mapel", "Jam_Ke",
+    "Status", "Keterangan", "ID_Piket", "Nama_Piket", "CreatedAt", "UpdatedAt"
   ]
 };
 
@@ -282,6 +287,11 @@ function doPost(e) {
     getAbsensiMapelByGuru: apiGetAbsensiMapelByGuru,
     getAkunSiswaUntukCetak: apiGetAkunSiswaUntukCetak,
     getSiswaUntukCetakKartu: apiGetSiswaUntukCetakKartu,
+    getJadwalMengajarHarian: apiGetJadwalMengajarHarian,
+    simpanKeteranganPiket: apiSimpanKeteranganPiket,
+    konfirmasiKeteranganGuru: apiKonfirmasiKeteranganGuru,
+    getNotifikasiPiketGuru: apiGetNotifikasiPiketGuru,
+    getRiwayatPiketGuru: apiGetRiwayatPiketGuru,
     getStatusAbsenHarianKelas: apiGetStatusAbsenHarianKelas,
 
     generateQrSession: apiGenerateQrSession,
@@ -1326,6 +1336,118 @@ function apiGetPoinPelanggaranSemua(payload) {
     const catatan = semuaCatatan.filter(function (r) { return r.ID_Siswa === s.ID; });
     return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Kelas: s.Kelas_Diampu, totalPoin: hitungTotalPoin(catatan), jumlahPelanggaran: catatan.filter(function (r) { return r.Tipe === "Tambah"; }).length };
   }).sort(function (a, b) { return b.totalPoin - a.totalPoin; });
+}
+
+// ============================================================================
+// MODUL PIKET: PEMANTAUAN GURU YANG BELUM MENGISI JURNAL MENGAJAR
+// ============================================================================
+
+const NAMA_HARI_LIST = ["", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
+function namaHariDariTanggal(tgl) {
+  const isoDay = Number(Utilities.formatDate(new Date(tgl), CONFIG.TIMEZONE, "u"));
+  return NAMA_HARI_LIST[isoDay];
+}
+
+// payload: { Tanggal (opsional, default hari ini) } -> seluruh jadwal mengajar
+// (dari Roster_Mengajar_JSON tiap guru) pada hari itu, lengkap dengan STATUS
+// aktualnya: "Mengajar" (jurnal sudah diisi guru), "Tidak Mengajar" / "Digantikan
+// Piket" (sudah dicatat piket/guru), "Menunggu Konfirmasi Guru" (diteruskan
+// piket, guru belum merespons), atau "Belum Ada Keterangan" (belum ada apa-apa).
+// Dipakai bersama oleh halaman Guru Piket (hanya hari ini) dan Waka Kurikulum
+// (bisa pilih tanggal apa saja).
+function apiGetJadwalMengajarHarian(payload) {
+  const tanggal = payload && payload.Tanggal ? payload.Tanggal : formatDateOnly(new Date());
+  const hari = namaHariDariTanggal(tanggal);
+
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const guruList = users.filter(function (u) { return u.Roster_Mengajar_JSON; });
+
+  const jurnalHariItu = readSheetAsObjects(SHEET_NAMES.JURNAL_MENGAJAR)
+    .filter(function (r) { return formatDateOnly(r.Tanggal) === formatDateOnly(tanggal); });
+  const piketHariItu = readSheetAsObjects(SHEET_NAMES.PIKET_KETIDAKHADIRAN_GURU)
+    .filter(function (r) { return formatDateOnly(r.Tanggal) === formatDateOnly(tanggal); });
+
+  const hasil = [];
+  guruList.forEach(function (guru) {
+    const roster = safeParseJson(guru.Roster_Mengajar_JSON).filter(function (r) { return r.Hari === hari; });
+    roster.forEach(function (r) {
+      const jurnal = jurnalHariItu.find(function (j) {
+        return j.ID_Guru === guru.ID && j.Kelas === r.Kelas && j.Mapel === r.Mapel && String(j.Jam_Ke) === String(r.JamKe);
+      });
+      const piket = piketHariItu.find(function (p) {
+        return p.ID_Guru === guru.ID && p.Kelas === r.Kelas && p.Mapel === r.Mapel && String(p.Jam_Ke) === String(r.JamKe);
+      });
+      let status = "Belum Ada Keterangan";
+      let keterangan = "";
+      if (jurnal) { status = "Mengajar"; }
+      else if (piket) { status = piket.Status; keterangan = piket.Keterangan; }
+      hasil.push({
+        ID_Guru: guru.ID,
+        Nama_Guru: guru.Nama,
+        Kelas: r.Kelas,
+        Mapel: r.Mapel,
+        Jam_Ke: r.JamKe,
+        Status: status,
+        Keterangan: keterangan,
+        Nama_Piket: piket ? piket.Nama_Piket : "",
+        Piket_ID: piket ? piket.ID : null
+      });
+    });
+  });
+
+  hasil.sort(function (a, b) { return String(a.Jam_Ke).localeCompare(String(b.Jam_Ke)) || a.Nama_Guru.localeCompare(b.Nama_Guru); });
+  return { Tanggal: formatDateOnly(tanggal), Hari: hari, Jadwal: hasil };
+}
+
+// payload: { Tanggal, Hari, ID_Guru, Nama_Guru, Kelas, Mapel, Jam_Ke, Status,
+// Keterangan, ID_Piket, Nama_Piket } -> Piket meneruskan notifikasi ke guru
+// ("Menunggu Konfirmasi Guru") ATAU langsung mengisi keterangan ("Tidak
+// Mengajar" / "Digantikan Piket").
+function apiSimpanKeteranganPiket(payload) {
+  const obj = {
+    ID: generateId("PKT"),
+    Tanggal: payload.Tanggal,
+    Hari: payload.Hari,
+    ID_Guru: payload.ID_Guru,
+    Nama_Guru: payload.Nama_Guru,
+    Kelas: payload.Kelas,
+    Mapel: payload.Mapel,
+    Jam_Ke: payload.Jam_Ke,
+    Status: payload.Status, // "Menunggu Konfirmasi Guru" | "Tidak Mengajar" | "Digantikan Piket"
+    Keterangan: payload.Keterangan || "",
+    ID_Piket: payload.ID_Piket,
+    Nama_Piket: payload.Nama_Piket,
+    CreatedAt: new Date(),
+    UpdatedAt: new Date()
+  };
+  appendRowFromObject(SHEET_NAMES.PIKET_KETIDAKHADIRAN_GURU, obj);
+  return obj;
+}
+
+// Guru mengonfirmasi/mengisi sendiri keterangan atas notifikasi yang diteruskan piket
+function apiKonfirmasiKeteranganGuru(payload) {
+  updateRowByField(SHEET_NAMES.PIKET_KETIDAKHADIRAN_GURU, "ID", payload.ID, {
+    Status: payload.Status, // "Tidak Mengajar" | "Digantikan Piket"
+    Keterangan: payload.Keterangan || "",
+    UpdatedAt: new Date()
+  });
+  return { status: "Keterangan tersimpan." };
+}
+
+// payload: { ID_Guru } -> notifikasi yang diteruskan piket ke guru ybs dan
+// masih menunggu konfirmasi ("Menunggu Konfirmasi Guru"), ditampilkan di
+// beranda guru sebagai pengingat untuk mengisi keterangan.
+function apiGetNotifikasiPiketGuru(payload) {
+  return readSheetAsObjects(SHEET_NAMES.PIKET_KETIDAKHADIRAN_GURU)
+    .filter(function (r) { return r.ID_Guru === payload.ID_Guru && r.Status === "Menunggu Konfirmasi Guru"; })
+    .sort(function (a, b) { return new Date(b.CreatedAt) - new Date(a.CreatedAt); });
+}
+
+// payload: { ID_Guru } -> riwayat lengkap catatan piket untuk guru ybs (semua status)
+function apiGetRiwayatPiketGuru(payload) {
+  return readSheetAsObjects(SHEET_NAMES.PIKET_KETIDAKHADIRAN_GURU)
+    .filter(function (r) { return r.ID_Guru === payload.ID_Guru; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
 
 // ============================================================================

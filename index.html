@@ -341,7 +341,8 @@ function Alert({
   const styles = {
     error: "bg-red-50 text-red-700 border-red-200",
     success: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    info: "bg-indigo-50 text-indigo-700 border-indigo-200"
+    info: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    warning: "bg-amber-50 text-amber-700 border-amber-200"
   };
   return /*#__PURE__*/React.createElement("div", {
     className: classNames("border rounded-lg px-4 py-2 text-sm mb-3", styles[type])
@@ -813,6 +814,10 @@ const ROLE_MENU = {
     key: "waka_kurikulum_rekap_kehadiran_kelas",
     label: "Rekap Kehadiran per Kelas",
     icon: "📊"
+  }, {
+    key: "waka_kurikulum_rekap_guru",
+    label: "Rekap Kehadiran Guru Mengajar",
+    icon: "🧑‍🏫"
   }],
   "Pengawas Sekolah": [{
     key: "pengawas_7kaih",
@@ -1076,6 +1081,7 @@ function PageRouter({
     kepsek_data_siswa: PengawasDataSiswaModule,
     waka_kurikulum_pkl_monitoring: WakaHubmiPklModule,
     waka_kurikulum_rekap_kehadiran_kelas: RekapKehadiranPerKelasModule,
+    waka_kurikulum_rekap_guru: WakaKurikulumRekapGuruModule,
     pengawas_7kaih: WakaKesiswaan7KaihModule,
     pengawas_jurnal_guru: PengawasMonitorJurnalGuruModule,
     pengawas_data_guru: PengawasDataGuruModule,
@@ -1088,6 +1094,89 @@ function PageRouter({
 /* ============================================================================
    MODUL GURU
    ============================================================================ */
+// Notifikasi untuk Guru: daftar jadwal mengajar yang diteruskan Piket karena
+// belum ada jurnalnya, menunggu guru ybs mengisi keterangan sendiri (Tidak
+// Mengajar / Digantikan Piket).
+function NotifikasiPiketGuru({ user }) {
+  const [list, setList] = useState([]);
+  const [riwayat, setRiwayat] = useState([]);
+  const [aksiUntuk, setAksiUntuk] = useState(null);
+  const [statusPilihan, setStatusPilihan] = useState("Tidak Mengajar");
+  const [keteranganInput, setKeteranganInput] = useState("");
+  const [error, setError] = useState("");
+  function load() {
+    apiCall("getNotifikasiPiketGuru", { ID_Guru: user.ID }).then(setList).catch(() => {});
+    apiCall("getRiwayatPiketGuru", { ID_Guru: user.ID }).then(r => setRiwayat(r.filter(x => x.Status !== "Menunggu Konfirmasi Guru"))).catch(() => {});
+  }
+  useEffect(load, []);
+  async function simpan() {
+    try {
+      await apiCall("konfirmasiKeteranganGuru", {
+        ID: aksiUntuk.ID,
+        Status: statusPilihan,
+        Keterangan: keteranganInput
+      });
+      showAcehGreeting();
+      setAksiUntuk(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  if (list.length === 0 && riwayat.length === 0) return null;
+  return React.createElement("div", {
+    className: "md:col-span-2 space-y-2"
+  }, error && React.createElement(Alert, null, error), list.map(n => React.createElement(Alert, {
+    key: n.ID,
+    type: "warning"
+  }, React.createElement("div", {
+    className: "flex flex-wrap items-center justify-between gap-2"
+  }, React.createElement("span", null, "Piket (", n.Nama_Piket, ") menandai Anda belum mengisi jurnal untuk ", n.Mapel, " kelas ", n.Kelas, " jam ke ", n.Jam_Ke, " pada ", formatTanggalIndo(n.Tanggal), ". Mohon isi keterangan."), React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => {
+      setAksiUntuk(n);
+      setStatusPilihan("Tidak Mengajar");
+      setKeteranganInput("");
+    }
+  }, "Isi Keterangan")))), riwayat.length > 0 && React.createElement(Card, {
+    title: "Riwayat Ketidakhadiran Mengajar (dicatat Piket)"
+  }, React.createElement("div", {
+    className: "max-h-56 overflow-y-auto divide-y text-sm"
+  }, riwayat.map(r => React.createElement("div", {
+    key: r.ID,
+    className: "py-2 flex items-start justify-between gap-2"
+  }, React.createElement("div", null, React.createElement("p", {
+    className: "font-medium"
+  }, formatTanggalIndo(r.Tanggal), " \\u00b7 ", r.Mapel, " \\u00b7 ", r.Kelas, " \\u00b7 Jam Ke ", r.Jam_Ke), r.Keterangan && React.createElement("p", {
+    className: "text-xs text-gray-500"
+  }, r.Keterangan), React.createElement("p", {
+    className: "text-xs text-gray-400"
+  }, "Dicatat oleh Piket: ", r.Nama_Piket)), React.createElement(Badge, {
+    color: r.Status === "Tidak Mengajar" ? "red" : "amber"
+  }, r.Status))))), React.createElement(Modal, {
+    open: !!aksiUntuk,
+    onClose: () => setAksiUntuk(null),
+    title: "Isi Keterangan"
+  }, aksiUntuk && React.createElement("div", null, React.createElement("p", {
+    className: "text-sm text-gray-500 mb-3"
+  }, aksiUntuk.Kelas, " \u00b7 ", aksiUntuk.Mapel, " \u00b7 Jam Ke ", aksiUntuk.Jam_Ke, " \u00b7 ", formatTanggalIndo(aksiUntuk.Tanggal)), React.createElement(Select, {
+    label: "Status",
+    value: statusPilihan,
+    onChange: e => setStatusPilihan(e.target.value),
+    options: ["Tidak Mengajar", "Digantikan Piket"]
+  }), React.createElement(Textarea, {
+    label: "Keterangan",
+    rows: "3",
+    value: keteranganInput,
+    onChange: e => setKeteranganInput(e.target.value),
+    placeholder: "cth: Sakit, izin keluarga, dsb."
+  }), React.createElement("div", {
+    className: "flex gap-2 mt-3"
+  }, React.createElement(Button, { onClick: simpan }, "Simpan"), React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setAksiUntuk(null)
+  }, "Batal")))));
+}
 function GuruHomeModule() {
   const {
     user
@@ -1106,7 +1195,9 @@ function GuruHomeModule() {
   });
   return /*#__PURE__*/React.createElement("div", {
     className: "grid md:grid-cols-2 gap-4"
-  }, /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement(NotifikasiPiketGuru, {
+    user: user
+  }), /*#__PURE__*/React.createElement(Card, {
     title: "Mata Pelajaran yang Diampu"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex flex-wrap gap-2"
@@ -3649,6 +3740,122 @@ function AdminRekapBulananTab({
    MODUL PIKET GURU: INPUT POIN PELANGGARAN SISWA
    ============================================================================ */
 const NAMA_HARI_INI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date().getDay()];
+// Panel Piket: memantau guru yang jadwalnya hari ini belum diisi jurnal
+// mengajarnya. Piket bisa meneruskan pengingat ke guru ybs, atau langsung
+// mengisi keterangan (Tidak Mengajar / Digantikan Piket).
+function PiketJurnalGuruPanel({ user }) {
+  const [data, setData] = useState({ Tanggal: "", Hari: "", Jadwal: [] });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [aksiUntuk, setAksiUntuk] = useState(null); // item jadwal yang sedang diisi keterangannya
+  const [statusPilihan, setStatusPilihan] = useState("Tidak Mengajar");
+  const [keteranganInput, setKeteranganInput] = useState("");
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getJadwalMengajarHarian", {}));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  function bukaAksi(item, statusAwal) {
+    setAksiUntuk(item);
+    setStatusPilihan(statusAwal);
+    setKeteranganInput("");
+  }
+  async function simpanAksi() {
+    try {
+      await apiCall("simpanKeteranganPiket", {
+        Tanggal: data.Tanggal,
+        Hari: data.Hari,
+        ID_Guru: aksiUntuk.ID_Guru,
+        Nama_Guru: aksiUntuk.Nama_Guru,
+        Kelas: aksiUntuk.Kelas,
+        Mapel: aksiUntuk.Mapel,
+        Jam_Ke: aksiUntuk.Jam_Ke,
+        Status: statusPilihan,
+        Keterangan: keteranganInput,
+        ID_Piket: user.ID,
+        Nama_Piket: user.Nama
+      });
+      showAcehGreeting();
+      setAksiUntuk(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  function badgeColorStatus(status) {
+    if (status === "Mengajar") return "green";
+    if (status === "Tidak Mengajar") return "red";
+    if (status === "Digantikan Piket") return "amber";
+    if (status === "Menunggu Konfirmasi Guru") return "indigo";
+    return "gray";
+  }
+  const belumAdaKeterangan = data.Jadwal.filter(j => j.Status === "Belum Ada Keterangan");
+  return React.createElement(Card, {
+    title: "Guru Belum Mengisi Jurnal Mengajar Hari Ini",
+    subtitle: data.Hari + ", " + data.Tanggal + " \u00b7 " + belumAdaKeterangan.length + " jadwal belum ada keterangan",
+    actions: React.createElement(Button, {
+      variant: "outline",
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang")
+  }, error && React.createElement(Alert, null, error), React.createElement("div", {
+    className: "overflow-x-auto max-h-[28rem] overflow-y-auto"
+  }, React.createElement("table", {
+    className: "w-full text-sm"
+  }, React.createElement("thead", null, React.createElement("tr", {
+    className: "text-left text-gray-400 border-b sticky top-0 bg-white"
+  }, React.createElement("th", { className: "py-2" }, "Jam Ke"), React.createElement("th", null, "Guru"), React.createElement("th", null, "Kelas"), React.createElement("th", null, "Mapel"), React.createElement("th", null, "Status"), React.createElement("th", null))), React.createElement("tbody", null, data.Jadwal.map((j, i) => React.createElement("tr", {
+    key: i,
+    className: "border-b last:border-0"
+  }, React.createElement("td", { className: "py-2" }, j.Jam_Ke), React.createElement("td", null, j.Nama_Guru), React.createElement("td", null, j.Kelas), React.createElement("td", null, j.Mapel), React.createElement("td", null, React.createElement(Badge, {
+    color: badgeColorStatus(j.Status)
+  }, j.Status), j.Keterangan && React.createElement("p", { className: "text-xs text-gray-400" }, j.Keterangan)), React.createElement("td", null, j.Status === "Belum Ada Keterangan" && React.createElement("div", {
+    className: "flex gap-1"
+  }, React.createElement(Button, {
+    variant: "outline",
+    onClick: () => bukaAksi(j, "Menunggu Konfirmasi Guru")
+  }, "Teruskan ke Guru"), React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => bukaAksi(j, "Tidak Mengajar")
+  }, "Isi Keterangan"))))), data.Jadwal.length === 0 && React.createElement("tr", null, React.createElement("td", {
+    colSpan: "6",
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada jadwal mengajar hari ini."))))), React.createElement(Modal, {
+    open: !!aksiUntuk,
+    onClose: () => setAksiUntuk(null),
+    title: aksiUntuk ? "Keterangan untuk " + aksiUntuk.Nama_Guru : ""
+  }, aksiUntuk && React.createElement("div", null, React.createElement("p", {
+    className: "text-sm text-gray-500 mb-3"
+  }, aksiUntuk.Kelas, " \u00b7 ", aksiUntuk.Mapel, " \u00b7 Jam Ke ", aksiUntuk.Jam_Ke), statusPilihan !== "Menunggu Konfirmasi Guru" && React.createElement(Select, {
+    label: "Status",
+    value: statusPilihan,
+    onChange: e => setStatusPilihan(e.target.value),
+    options: ["Tidak Mengajar", "Digantikan Piket"]
+  }), statusPilihan === "Menunggu Konfirmasi Guru" && React.createElement(Alert, {
+    type: "info"
+  }, "Notifikasi akan diteruskan ke akun ", aksiUntuk.Nama_Guru, ". Guru ybs yang akan mengisi keterangannya sendiri."), statusPilihan !== "Menunggu Konfirmasi Guru" && React.createElement(Textarea, {
+    label: "Keterangan",
+    rows: "3",
+    value: keteranganInput,
+    onChange: e => setKeteranganInput(e.target.value),
+    placeholder: "cth: Sakit, izin keluarga, dsb."
+  }), React.createElement("div", {
+    className: "flex gap-2 mt-3"
+  }, React.createElement(Button, {
+    onClick: simpanAksi
+  }, "Simpan"), React.createElement(Button, {
+    variant: "outline",
+    onClick: () => setAksiUntuk(null)
+  }, "Batal")))));
+}
 function GuruPiketModule() {
   const {
     user
@@ -3701,6 +3908,10 @@ function GuruPiketModule() {
     }
   }
   return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(PiketJurnalGuruPanel, {
+    user: user
+  }), /*#__PURE__*/React.createElement("div", {
     className: "grid md:grid-cols-2 gap-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Input Pelanggaran Siswa (Piket Harian)",
@@ -3767,7 +3978,7 @@ function GuruPiketModule() {
     color: "red"
   }, r.Poin, " poin")))), riwayatHariIni.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-center text-gray-400 py-6"
-  }, "Belum ada pelanggaran dicatat hari ini."))));
+  }, "Belum ada pelanggaran dicatat hari ini.")))));
 }
 
 /* ============================================================================
@@ -4202,6 +4413,73 @@ function RekapKehadiranPerKelasModule() {
   }, s.Persentase, "%")))))))))), data && data.kelasList.length === 0 && React.createElement("p", {
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data."))));
+}
+// Waka Kurikulum: pantau guru yang mengajar / tidak mengajar / digantikan
+// piket pada tanggal tertentu, lengkap dengan kelas, jam ke, dan mata pelajaran.
+function WakaKurikulumRekapGuruModule() {
+  const [tanggal, setTanggal] = useState(todayStr());
+  const [data, setData] = useState({ Tanggal: "", Hari: "", Jadwal: [] });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getJadwalMengajarHarian", { Tanggal: tanggal }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [tanggal]);
+  function badgeColorStatus(status) {
+    if (status === "Mengajar") return "green";
+    if (status === "Tidak Mengajar") return "red";
+    if (status === "Digantikan Piket") return "amber";
+    if (status === "Menunggu Konfirmasi Guru") return "indigo";
+    return "gray";
+  }
+  const jumlah = {
+    Mengajar: data.Jadwal.filter(j => j.Status === "Mengajar").length,
+    TidakMengajar: data.Jadwal.filter(j => j.Status === "Tidak Mengajar").length,
+    DigantikanPiket: data.Jadwal.filter(j => j.Status === "Digantikan Piket").length,
+    Menunggu: data.Jadwal.filter(j => j.Status === "Menunggu Konfirmasi Guru").length,
+    BelumAdaKeterangan: data.Jadwal.filter(j => j.Status === "Belum Ada Keterangan").length
+  };
+  return React.createElement(Card, {
+    title: "Rekap Kehadiran Guru Mengajar",
+    subtitle: data.Hari ? data.Hari + ", " + formatTanggalIndo(data.Tanggal) : "",
+    actions: React.createElement("div", {
+      className: "flex flex-wrap gap-2 items-end"
+    }, React.createElement(Input, {
+      label: "Pilih Tanggal",
+      type: "date",
+      value: tanggal,
+      onChange: e => setTanggal(e.target.value)
+    }), React.createElement(Button, {
+      variant: "outline",
+      onClick: load
+    }, loading ? React.createElement(Spinner, null) : "Muat Ulang"))
+  }, error && React.createElement(Alert, null, error), React.createElement("div", {
+    className: "flex flex-wrap gap-2 mb-4"
+  }, React.createElement(Badge, { color: "green" }, "Mengajar: ", jumlah.Mengajar), React.createElement(Badge, { color: "red" }, "Tidak Mengajar: ", jumlah.TidakMengajar), React.createElement(Badge, { color: "amber" }, "Digantikan Piket: ", jumlah.DigantikanPiket), React.createElement(Badge, { color: "indigo" }, "Menunggu Konfirmasi: ", jumlah.Menunggu), React.createElement(Badge, { color: "gray" }, "Belum Ada Keterangan: ", jumlah.BelumAdaKeterangan)), React.createElement("div", {
+    className: "overflow-x-auto"
+  }, React.createElement("table", {
+    className: "w-full text-sm"
+  }, React.createElement("thead", null, React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  }, React.createElement("th", { className: "py-2" }, "Jam Ke"), React.createElement("th", null, "Guru"), React.createElement("th", null, "Kelas"), React.createElement("th", null, "Mapel"), React.createElement("th", null, "Status"), React.createElement("th", null, "Keterangan"))), React.createElement("tbody", null, data.Jadwal.map((j, i) => React.createElement("tr", {
+    key: i,
+    className: "border-b last:border-0"
+  }, React.createElement("td", { className: "py-2" }, j.Jam_Ke), React.createElement("td", null, j.Nama_Guru), React.createElement("td", null, j.Kelas), React.createElement("td", null, j.Mapel), React.createElement("td", null, React.createElement(Badge, {
+    color: badgeColorStatus(j.Status)
+  }, j.Status)), React.createElement("td", { className: "text-gray-500" }, j.Keterangan || "-"))), data.Jadwal.length === 0 && React.createElement("tr", null, React.createElement("td", {
+    colSpan: "6",
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada jadwal mengajar pada tanggal ini."))))));
 }
 function WakaKesiswaanAbsensiModule() {
   const now = new Date();
