@@ -772,6 +772,10 @@ const ROLE_MENU = {
     label: "Jurnal Mengajar",
     icon: "📝"
   }, {
+    key: "guru_penilaian",
+    label: "Penilaian",
+    icon: "📊"
+  }, {
     key: "guru_riwayat",
     label: "Riwayat & Cetak Jurnal",
     icon: "🖨️"
@@ -1234,6 +1238,7 @@ function PageRouter({
     guru_home: GuruHomeModule,
     guru_absen: GuruAbsenModule,
     guru_jurnal: GuruJurnalModule,
+    guru_penilaian: GuruPenilaianModule,
     guru_riwayat: GuruRiwayatModule,
     guru_scan_siswa: GuruScanSiswaModule,
     guru_mgmp: GuruMgmpModule,
@@ -1412,7 +1417,7 @@ function GuruAbsenModule() {
     className: "space-y-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Absensi Guru / Pegawai",
-    subtitle: "Absen hanya bisa dilakukan dalam radius 150 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
+    subtitle: "Absen hanya bisa dilakukan dalam radius 150 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
   }, msg), /*#__PURE__*/React.createElement("div", {
@@ -1990,6 +1995,537 @@ function GuruScanSiswaModule() {
     onSubmit: prosesKode
   }));
 }
+/* ============================================================================
+   MODUL PENILAIAN: TUJUAN PEMBELAJARAN, PENILAIAN HARIAN & TENGAH SEMESTER
+   ============================================================================ */
+function semesterBerjalan() {
+  const bulan = new Date().getMonth() + 1; // 1-12
+  return bulan >= 7 ? "Ganjil" : "Genap";
+}
+function tahunAjaranBerjalan() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const bulan = now.getMonth() + 1;
+  return bulan >= 7 ? y + "/" + (y + 1) : (y - 1) + "/" + y;
+}
+
+// Form membuat Tujuan Pembelajaran baru
+function FormTujuanPembelajaran({
+  kelas,
+  mapel,
+  onSaved
+}) {
+  const {
+    user
+  } = useAuth();
+  const [kodeTp, setKodeTp] = useState("");
+  const [deskripsi, setDeskripsi] = useState("");
+  const [semester, setSemester] = useState(semesterBerjalan());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function simpan(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      await apiCall("saveTujuanPembelajaran", {
+        Kelas: kelas,
+        Mapel: mapel,
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama,
+        Semester: semester,
+        Tahun_Ajaran: tahunAjaranBerjalan(),
+        Kode_TP: kodeTp,
+        Deskripsi_TP: deskripsi
+      });
+      setKodeTp("");
+      setDeskripsi("");
+      onSaved();
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement("form", {
+    onSubmit: simpan,
+    className: "space-y-2"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "grid sm:grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Kode TP",
+    value: kodeTp,
+    onChange: e => setKodeTp(e.target.value),
+    placeholder: "cth: TP 1.1",
+    required: true
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Semester",
+    value: semester,
+    onChange: e => setSemester(e.target.value),
+    options: ["Ganjil", "Genap"]
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-end"
+  }, /*#__PURE__*/React.createElement(Button, {
+    type: "submit",
+    disabled: loading,
+    className: "w-full"
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "+ Tambah TP"))), /*#__PURE__*/React.createElement(Textarea, {
+    label: "Deskripsi Tujuan Pembelajaran",
+    rows: "2",
+    value: deskripsi,
+    onChange: e => setDeskripsi(e.target.value),
+    placeholder: "cth: Peserta didik mampu menganalisis...",
+    required: true
+  }));
+}
+
+function TujuanPembelajaranTab({
+  kelas,
+  mapel
+}) {
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  function load() {
+    apiCall("getTujuanPembelajaran", {
+      Kelas: kelas,
+      Mapel: mapel
+    }).then(setList).catch(e => setError(e.message));
+  }
+  useEffect(load, [kelas, mapel]);
+  async function hapus(id) {
+    if (!confirm("Hapus Tujuan Pembelajaran ini?")) return;
+    try {
+      await apiCall("deleteTujuanPembelajaran", {
+        ID: id
+      });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Tambah Tujuan Pembelajaran"
+  }, /*#__PURE__*/React.createElement(FormTujuanPembelajaran, {
+    kelas: kelas,
+    mapel: mapel,
+    onSaved: load
+  })), /*#__PURE__*/React.createElement(Card, {
+    title: "Daftar Tujuan Pembelajaran",
+    subtitle: kelas + " · " + mapel
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "divide-y"
+  }, list.map(tp => /*#__PURE__*/React.createElement("div", {
+    key: tp.ID,
+    className: "py-2 flex justify-between items-start gap-2"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium text-sm"
+  }, tp.Kode_TP, " ", /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, tp.Semester)), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-gray-600"
+  }, tp.Deskripsi_TP)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => hapus(tp.ID),
+    className: "text-red-500 text-xs hover:underline shrink-0"
+  }, "Hapus"))), list.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada Tujuan Pembelajaran untuk kelas & mapel ini."))));
+}
+
+// Form membuat kegiatan Penilaian baru (Harian / Tengah Semester)
+function FormBuatPenilaian({
+  kelas,
+  mapel,
+  jenis,
+  daftarTp,
+  onSaved,
+  onBatal
+}) {
+  const {
+    user
+  } = useAuth();
+  const [judul, setJudul] = useState("");
+  const [tanggal, setTanggal] = useState(todayStr());
+  const [kktp, setKktp] = useState(70);
+  const [semester, setSemester] = useState(semesterBerjalan());
+  const [tpTerpilih, setTpTerpilih] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  function toggleTp(kode) {
+    setTpTerpilih(prev => prev.includes(kode) ? prev.filter(k => k !== kode) : [...prev, kode]);
+  }
+  async function simpan(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      await apiCall("savePenilaian", {
+        Jenis: jenis,
+        Kelas: kelas,
+        Mapel: mapel,
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama,
+        Tanggal: tanggal,
+        Judul: judul,
+        TP_Terkait: tpTerpilih,
+        KKTP: kktp,
+        Semester: semester,
+        Tahun_Ajaran: tahunAjaranBerjalan()
+      });
+      onSaved();
+    } catch (e2) {
+      setError(e2.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Buat Penilaian " + jenis + " Baru"
+  }, /*#__PURE__*/React.createElement("form", {
+    onSubmit: simpan,
+    className: "space-y-3"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "grid sm:grid-cols-3 gap-2"
+  }, /*#__PURE__*/React.createElement(Input, {
+    label: "Judul Penilaian",
+    value: judul,
+    onChange: e => setJudul(e.target.value),
+    placeholder: jenis === "Harian" ? "cth: Ulangan Harian Bab 1" : "cth: PTS Semester Ganjil",
+    required: true
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tanggal",
+    type: "date",
+    value: tanggal,
+    onChange: e => setTanggal(e.target.value)
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "KKTP (Kriteria Ketercapaian)",
+    type: "number",
+    value: kktp,
+    onChange: e => setKktp(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "text-sm font-medium text-gray-600 mb-1"
+  }, "Tujuan Pembelajaran Terkait"), daftarTp.length === 0 ? /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400"
+  }, "Belum ada Tujuan Pembelajaran untuk kelas & mapel ini. Tambahkan dulu di tab \"Tujuan Pembelajaran\".") : /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2"
+  }, daftarTp.map(tp => /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    key: tp.ID,
+    onClick: () => toggleTp(tp.Kode_TP),
+    className: "px-3 py-1 rounded-full text-xs border " + (tpTerpilih.includes(tp.Kode_TP) ? "bg-primary-600 text-white border-primary-600" : "bg-white text-gray-600 border-gray-300")
+  }, tp.Kode_TP)))), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2"
+  }, /*#__PURE__*/React.createElement(Button, {
+    type: "submit",
+    disabled: loading
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Penilaian"), /*#__PURE__*/React.createElement(Button, {
+    type: "button",
+    variant: "outline",
+    onClick: onBatal
+  }, "Batal"))));
+}
+
+// Grid isi nilai per siswa untuk satu kegiatan penilaian
+function IsiNilaiPenilaian({
+  penilaian,
+  kelas,
+  onSelesai
+}) {
+  const [nilai, setNilai] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
+  function load() {
+    apiCall("getNilaiPenilaian", {
+      ID_Penilaian: penilaian.ID,
+      Kelas: kelas
+    }).then(setNilai).catch(e => setError(e.message));
+  }
+  useEffect(load, [penilaian.ID]);
+  function ubahNilai(idSiswa, val) {
+    setNilai(prev => prev.map(n => n.ID_Siswa === idSiswa ? {
+      ...n,
+      Nilai: val === "" ? null : Number(val)
+    } : n));
+  }
+  async function simpanSemua() {
+    setLoading(true);
+    setError("");
+    setMsg("");
+    try {
+      await apiCall("saveNilaiSiswaBulk", {
+        ID_Penilaian: penilaian.ID,
+        Kelas: kelas,
+        Nilai: nilai
+      });
+      setMsg("Semua nilai tersimpan.");
+      showAcehGreeting();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Isi Nilai - " + penilaian.Judul,
+    subtitle: formatTanggalIndo(penilaian.Tanggal) + " · KKTP " + penilaian.KKTP,
+    actions: /*#__PURE__*/React.createElement(Button, {
+      variant: "outline",
+      onClick: onSelesai
+    }, "Kembali ke Daftar")
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, msg), /*#__PURE__*/React.createElement("div", {
+    className: "max-h-96 overflow-y-auto divide-y"
+  }, nilai.map((n, i) => /*#__PURE__*/React.createElement("div", {
+    key: n.ID_Siswa,
+    className: "py-2 flex items-center justify-between gap-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-sm"
+  }, i + 1, ". ", n.Nama_Siswa), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: "0",
+    max: "100",
+    value: n.Nilai === null ? "" : n.Nilai,
+    onChange: e => ubahNilai(n.ID_Siswa, e.target.value),
+    placeholder: "-",
+    className: "w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center " + (n.Nilai !== null && n.Nilai < penilaian.KKTP ? "border-red-300 bg-red-50" : "")
+  })))), /*#__PURE__*/React.createElement(Button, {
+    onClick: simpanSemua,
+    disabled: loading,
+    className: "mt-4"
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Simpan Semua Nilai"));
+}
+
+// Rekap pivot nilai (siswa x kegiatan penilaian) untuk satu Kelas+Mapel+Jenis
+function RekapNilaiMapel({
+  kelas,
+  mapel,
+  jenis
+}) {
+  const [data, setData] = useState({
+    Kolom: [],
+    Baris: []
+  });
+  const [error, setError] = useState("");
+  function load() {
+    apiCall("getRekapNilaiMapel", {
+      Kelas: kelas,
+      Mapel: mapel,
+      Jenis: jenis
+    }).then(setData).catch(e => setError(e.message));
+  }
+  useEffect(load, [kelas, mapel, jenis]);
+  const headerRow = React.createElement("tr", {
+    className: "text-left text-gray-400 border-b"
+  },
+    React.createElement("th", { className: "py-1 pr-2" }, "No"),
+    React.createElement("th", { className: "py-1 pr-2" }, "Nama Siswa"),
+    data.Kolom.map(k => React.createElement("th", {
+      key: k.ID,
+      className: "py-1 px-2 text-center"
+    }, k.Judul)),
+    React.createElement("th", { className: "py-1 px-2 text-center" }, "Rata-rata")
+  );
+  const bodyRows = data.Baris.map((b, i) => React.createElement("tr", {
+    key: b.ID_Siswa,
+    className: "border-b last:border-0"
+  },
+    React.createElement("td", { className: "py-1 pr-2" }, i + 1),
+    React.createElement("td", { className: "py-1 pr-2" }, b.Nama_Siswa),
+    b.Nilai.map((v, j) => React.createElement("td", {
+      key: j,
+      className: "py-1 px-2 text-center"
+    }, v === null ? "-" : v)),
+    React.createElement("td", {
+      className: "py-1 px-2 text-center font-medium"
+    }, b.RataRata === null ? "-" : b.RataRata)
+  ));
+  const barisKosong = data.Baris.length === 0 ? React.createElement("tr", null, React.createElement("td", {
+    colSpan: data.Kolom.length + 3,
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada data.")) : null;
+  return React.createElement(Card, {
+    title: "Rekap Nilai " + jenis,
+    subtitle: kelas + " · " + mapel,
+    actions: React.createElement(PrintButton, {
+      label: "Cetak",
+      landscape: true
+    })
+  },
+    error && React.createElement(Alert, null, error),
+    React.createElement("div", {
+      id: "print-area",
+      className: "overflow-x-auto"
+    },
+      React.createElement("h1", {
+        className: "hidden print:block text-lg font-bold text-center mb-1"
+      }, "REKAP NILAI ", jenis.toUpperCase()),
+      React.createElement("p", {
+        className: "hidden print:block text-center text-sm mb-4"
+      }, "Kelas ", kelas, " · ", mapel),
+      React.createElement("table", {
+        className: "w-full text-sm"
+      },
+        React.createElement("thead", null, headerRow),
+        React.createElement("tbody", null, bodyRows, barisKosong)
+      )
+    )
+  );
+}
+
+// Tab Penilaian Harian / Tengah Semester - daftar kegiatan + tombol buat baru + isi nilai
+function PenilaianTab({
+  kelas,
+  mapel,
+  jenis
+}) {
+  const [daftarTp, setDaftarTp] = useState([]);
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  const [mode, setMode] = useState("list"); // "list" | "buat" | "isi" | "rekap"
+  const [dipilih, setDipilih] = useState(null);
+  function load() {
+    apiCall("getPenilaianList", {
+      Kelas: kelas,
+      Mapel: mapel,
+      Jenis: jenis
+    }).then(setList).catch(e => setError(e.message));
+    apiCall("getTujuanPembelajaran", {
+      Kelas: kelas,
+      Mapel: mapel
+    }).then(setDaftarTp).catch(() => {});
+  }
+  useEffect(load, [kelas, mapel, jenis]);
+  async function hapus(id) {
+    if (!confirm("Hapus kegiatan penilaian ini beserta seluruh nilainya?")) return;
+    try {
+      await apiCall("deletePenilaian", {
+        ID: id
+      });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  if (mode === "buat") return /*#__PURE__*/React.createElement(FormBuatPenilaian, {
+    kelas: kelas,
+    mapel: mapel,
+    jenis: jenis,
+    daftarTp: daftarTp,
+    onSaved: () => {
+      setMode("list");
+      load();
+    },
+    onBatal: () => setMode("list")
+  });
+  if (mode === "isi" && dipilih) return /*#__PURE__*/React.createElement(IsiNilaiPenilaian, {
+    penilaian: dipilih,
+    kelas: kelas,
+    onSelesai: () => {
+      setMode("list");
+      load();
+    }
+  });
+  if (mode === "rekap") return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "mb-3 no-print",
+    onClick: () => setMode("list")
+  }, "← Kembali ke Daftar"), /*#__PURE__*/React.createElement(RekapNilaiMapel, {
+    kelas: kelas,
+    mapel: mapel,
+    jenis: jenis
+  }));
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Penilaian " + jenis,
+    subtitle: kelas + " · " + mapel,
+    actions: /*#__PURE__*/React.createElement("div", {
+      className: "flex gap-2"
+    }, /*#__PURE__*/React.createElement(Button, {
+      variant: "outline",
+      onClick: () => setMode("rekap")
+    }, "📊 Rekap"), /*#__PURE__*/React.createElement(Button, {
+      onClick: () => setMode("buat")
+    }, "+ Buat Baru"))
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "divide-y"
+  }, list.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.ID,
+    className: "py-2 flex justify-between items-center gap-2"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium text-sm"
+  }, p.Judul), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-500"
+  }, formatTanggalIndo(p.Tanggal), " · KKTP ", p.KKTP, " · ", p.JumlahSudahDinilai, "/", p.JumlahSiswaKelas, " siswa dinilai", p.TP_Terkait && p.TP_Terkait.length ? " · TP: " + p.TP_Terkait.join(", ") : "")), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 shrink-0"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => {
+      setDipilih(p);
+      setMode("isi");
+    }
+  }, "Isi Nilai"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => hapus(p.ID),
+    className: "text-red-500 text-xs hover:underline"
+  }, "Hapus")))), list.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Belum ada kegiatan Penilaian ", jenis, " untuk kelas & mapel ini.")));
+}
+
+function GuruPenilaianModule() {
+  const {
+    user
+  } = useAuth();
+  const kelasOptions = (user.Kelas_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const mapelOptions = (user.Mapel_Diampu || "").split(",").map(s => s.trim()).filter(Boolean);
+  const [kelas, setKelas] = useState(kelasOptions[0] || "");
+  const [mapel, setMapel] = useState(mapelOptions[0] || "");
+  const [tab, setTab] = useState("tp");
+  if (!kelas || !mapel) {
+    return /*#__PURE__*/React.createElement(Alert, null, "Kelas/Mapel yang Anda ampu belum diatur oleh Admin.");
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    className: "no-print"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid sm:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement(Select, {
+    label: "Kelas",
+    value: kelas,
+    onChange: e => setKelas(e.target.value),
+    options: kelasOptions
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Mata Pelajaran",
+    value: mapel,
+    onChange: e => setMapel(e.target.value),
+    options: mapelOptions
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 flex-wrap no-print"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "tp" ? "primary" : "outline",
+    onClick: () => setTab("tp")
+  }, "🎯 Tujuan Pembelajaran"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "harian" ? "primary" : "outline",
+    onClick: () => setTab("harian")
+  }, "📝 Penilaian Harian"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "pts" ? "primary" : "outline",
+    onClick: () => setTab("pts")
+  }, "📋 Penilaian Tengah Semester")), tab === "tp" && /*#__PURE__*/React.createElement(TujuanPembelajaranTab, {
+    kelas: kelas,
+    mapel: mapel
+  }), tab === "harian" && /*#__PURE__*/React.createElement(PenilaianTab, {
+    kelas: kelas,
+    mapel: mapel,
+    jenis: "Harian"
+  }), tab === "pts" && /*#__PURE__*/React.createElement(PenilaianTab, {
+    kelas: kelas,
+    mapel: mapel,
+    jenis: "Tengah Semester"
+  }));
+}
+
 function GuruMgmpModule() {
   const {
     user

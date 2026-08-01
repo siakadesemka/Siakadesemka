@@ -28,8 +28,8 @@ const CONFIG = {
   SCHOOL_LNG: 96.040818,      // Ganti dengan koordinat sekolah Anda
   CABANG_DINAS_LAT: 4.176717348593045,  // Koordinat Cabang Dinas Pendidikan (lokasi alternatif absen guru)
   CABANG_DINAS_LNG: 96.13676851392087,
-  RADIUS_GURU_METER: 500,
-  RADIUS_PKL_METER: 100,
+  RADIUS_GURU_METER: 150,
+  RADIUS_PKL_METER: 30,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
   TIMEZONE: "GMT+7",
 
@@ -107,7 +107,10 @@ const SHEET_NAMES = {
   ABSEN_LITERASI_QURAN: "Absen_Literasi_Quran",
   DOKUMEN_SEKOLAH: "Dokumen_Sekolah",
   KEHADIRAN_MENGAJAR_GURU: "Kehadiran_Mengajar_Guru",
-  TINDAK_LANJUT_SISWA: "Tindak_Lanjut_Siswa"
+  TINDAK_LANJUT_SISWA: "Tindak_Lanjut_Siswa",
+  TUJUAN_PEMBELAJARAN: "Tujuan_Pembelajaran",
+  PENILAIAN_MASTER: "Penilaian_Master",
+  NILAI_SISWA: "Nilai_Siswa"
 };
 
 // Definisi header setiap sheet. setupDatabase() akan membuat sheet + header
@@ -195,6 +198,22 @@ const SHEET_SCHEMAS = {
   Tindak_Lanjut_Siswa: [
     "ID", "ID_Siswa", "Nama_Siswa", "Kelas", "Tanggal", "Total_Poin_Saat_Itu", "Tingkat",
     "Jenis_Tindakan", "Keterangan", "ID_Wali_Kelas", "Nama_Wali_Kelas", "CreatedAt"
+  ],
+  // Tujuan Pembelajaran (TP) per Kelas+Mapel - dasar acuan yang dipakai guru saat
+  // membuat Penilaian Harian maupun Penilaian Tengah Semester.
+  Tujuan_Pembelajaran: [
+    "ID", "Kelas", "Mapel", "ID_Guru", "Nama_Guru", "Semester", "Tahun_Ajaran",
+    "Kode_TP", "Deskripsi_TP", "CreatedAt"
+  ],
+  // Master satu kegiatan penilaian (Harian / Tengah Semester) untuk Kelas+Mapel
+  // tertentu, mengacu ke satu/lebih Tujuan Pembelajaran.
+  Penilaian_Master: [
+    "ID", "Jenis", "Kelas", "Mapel", "ID_Guru", "Nama_Guru", "Tanggal", "Judul",
+    "TP_Terkait_JSON", "KKTP", "Semester", "Tahun_Ajaran", "CreatedAt"
+  ],
+  // Nilai per siswa untuk satu Penilaian_Master (ID_Penilaian)
+  Nilai_Siswa: [
+    "ID", "ID_Penilaian", "ID_Siswa", "Nama_Siswa", "Kelas", "Nilai", "CreatedAt"
   ]
 };
 
@@ -364,7 +383,18 @@ function doPost(e) {
 
     saveTindakLanjut: apiSaveTindakLanjut,
     getRiwayatTindakLanjut: apiGetRiwayatTindakLanjut,
-    getHariLiburDalamRentang: apiGetHariLiburDalamRentang
+    getHariLiburDalamRentang: apiGetHariLiburDalamRentang,
+
+    saveTujuanPembelajaran: apiSaveTujuanPembelajaran,
+    getTujuanPembelajaran: apiGetTujuanPembelajaran,
+    deleteTujuanPembelajaran: apiDeleteTujuanPembelajaran,
+    savePenilaian: apiSavePenilaian,
+    getPenilaianList: apiGetPenilaianList,
+    deletePenilaian: apiDeletePenilaian,
+    getNilaiPenilaian: apiGetNilaiPenilaian,
+    saveNilaiSiswaBulk: apiSaveNilaiSiswaBulk,
+    getRekapNilaiMapel: apiGetRekapNilaiMapel,
+    getNilaiSiswaSendiri: apiGetNilaiSiswaSendiri
   };
 
   const handler = routes[action];
@@ -1027,7 +1057,7 @@ function apiSaveJurnalPkl(payload) {
   return obj;
 }
 
-// Setelah jurnal terisi, siswa baru boleh absen dengan validasi GPS radius 100m
+// Setelah jurnal terisi, siswa baru boleh absen dengan validasi GPS radius 30m
 // payload: { ID_Siswa, Lat, Long }
 function apiAbsenPkl(payload) {
   const users = readSheetAsObjects(SHEET_NAMES.USERS);
@@ -2338,6 +2368,176 @@ function apiGetRekapKehadiranMengajarHarian(payload) {
     }
   });
   return { Tanggal: jadwal.Tanggal, Hari: jadwal.Hari, GuruMasuk: masuk, GuruTidakMasuk: tidakMasuk };
+}
+
+// ============================================================================
+// MODUL PENILAIAN: TUJUAN PEMBELAJARAN, PENILAIAN HARIAN & TENGAH SEMESTER
+// Mengikuti pola Kurikulum Merdeka: guru menetapkan Tujuan Pembelajaran (TP) per
+// Kelas+Mapel sebagai acuan, lalu membuat kegiatan Penilaian Harian atau Penilaian
+// Tengah Semester yang mengacu ke TP tsb, dan mengisi nilai per siswa.
+// ============================================================================
+
+// payload: { Kelas, Mapel, ID_Guru, Nama_Guru, Semester, Tahun_Ajaran, Kode_TP, Deskripsi_TP }
+function apiSaveTujuanPembelajaran(payload) {
+  const obj = {
+    ID: generateId("TP"),
+    Kelas: payload.Kelas,
+    Mapel: payload.Mapel,
+    ID_Guru: payload.ID_Guru,
+    Nama_Guru: payload.Nama_Guru,
+    Semester: payload.Semester,
+    Tahun_Ajaran: payload.Tahun_Ajaran,
+    Kode_TP: payload.Kode_TP,
+    Deskripsi_TP: payload.Deskripsi_TP,
+    CreatedAt: new Date()
+  };
+  appendRowFromObject(SHEET_NAMES.TUJUAN_PEMBELAJARAN, obj);
+  return obj;
+}
+
+// payload: { Kelas, Mapel }
+function apiGetTujuanPembelajaran(payload) {
+  return readSheetAsObjects(SHEET_NAMES.TUJUAN_PEMBELAJARAN)
+    .filter(function (r) { return r.Kelas === payload.Kelas && r.Mapel === payload.Mapel; })
+    .sort(function (a, b) { return String(a.Kode_TP).localeCompare(String(b.Kode_TP), undefined, { numeric: true }); });
+}
+
+function apiDeleteTujuanPembelajaran(payload) {
+  deleteRowByField(SHEET_NAMES.TUJUAN_PEMBELAJARAN, "ID", payload.ID);
+  return { deleted: payload.ID };
+}
+
+// payload: { Jenis ("Harian"/"Tengah Semester"), Kelas, Mapel, ID_Guru, Nama_Guru,
+// Tanggal, Judul, TP_Terkait (array Kode_TP/ID), KKTP, Semester, Tahun_Ajaran }
+function apiSavePenilaian(payload) {
+  if (["Harian", "Tengah Semester"].indexOf(payload.Jenis) === -1) {
+    throw new Error("Jenis penilaian harus 'Harian' atau 'Tengah Semester'.");
+  }
+  const obj = {
+    ID: generateId("PNL"),
+    Jenis: payload.Jenis,
+    Kelas: payload.Kelas,
+    Mapel: payload.Mapel,
+    ID_Guru: payload.ID_Guru,
+    Nama_Guru: payload.Nama_Guru,
+    Tanggal: payload.Tanggal,
+    Judul: payload.Judul,
+    TP_Terkait_JSON: JSON.stringify(payload.TP_Terkait || []),
+    KKTP: payload.KKTP || 70,
+    Semester: payload.Semester,
+    Tahun_Ajaran: payload.Tahun_Ajaran,
+    CreatedAt: new Date()
+  };
+  appendRowFromObject(SHEET_NAMES.PENILAIAN_MASTER, obj);
+  return obj;
+}
+
+// payload: { Kelas, Mapel, Jenis (opsional) } -> daftar kegiatan penilaian, lengkap
+// jumlah siswa yang sudah dinilai dari total siswa kelas tsb.
+function apiGetPenilaianList(payload) {
+  let list = readSheetAsObjects(SHEET_NAMES.PENILAIAN_MASTER)
+    .filter(function (r) { return r.Kelas === payload.Kelas && r.Mapel === payload.Mapel; });
+  if (payload.Jenis) list = list.filter(function (r) { return r.Jenis === payload.Jenis; });
+  const semuaNilai = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA);
+  const jumlahSiswaKelas = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
+  }).length;
+  return list.map(function (p) {
+    const nilaiTerkait = semuaNilai.filter(function (n) { return n.ID_Penilaian === p.ID; });
+    return {
+      ID: p.ID,
+      Jenis: p.Jenis,
+      Tanggal: p.Tanggal,
+      Judul: p.Judul,
+      TP_Terkait: safeParseJson(p.TP_Terkait_JSON),
+      KKTP: p.KKTP,
+      Semester: p.Semester,
+      Tahun_Ajaran: p.Tahun_Ajaran,
+      JumlahSudahDinilai: nilaiTerkait.length,
+      JumlahSiswaKelas: jumlahSiswaKelas
+    };
+  }).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+}
+
+// Menghapus satu kegiatan penilaian beserta seluruh nilai siswa yang menyertainya.
+function apiDeletePenilaian(payload) {
+  const semuaNilai = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Penilaian === payload.ID; });
+  semuaNilai.forEach(function (n) { deleteRowByField(SHEET_NAMES.NILAI_SISWA, "ID", n.ID); });
+  deleteRowByField(SHEET_NAMES.PENILAIAN_MASTER, "ID", payload.ID);
+  return { deleted: payload.ID };
+}
+
+// payload: { ID_Penilaian, Kelas } -> nilai seluruh siswa satu kelas untuk satu
+// kegiatan penilaian (siswa yang belum dinilai tetap muncul dengan Nilai null).
+function apiGetNilaiPenilaian(payload) {
+  const siswaKelas = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
+  }).sort(function (a, b) { return String(a.Nama).localeCompare(String(b.Nama)); });
+  const nilaiTerkait = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Penilaian === payload.ID_Penilaian; });
+  return siswaKelas.map(function (s) {
+    const n = nilaiTerkait.find(function (x) { return x.ID_Siswa === s.ID; });
+    return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Nilai: n ? Number(n.Nilai) : null };
+  });
+}
+
+// payload: { ID_Penilaian, Kelas, Nilai: [{ID_Siswa,Nama_Siswa,Nilai}] } -> menimpa
+// (overwrite) seluruh nilai kegiatan penilaian tsb sesuai isian guru saat itu.
+function apiSaveNilaiSiswaBulk(payload) {
+  const existing = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Penilaian === payload.ID_Penilaian; });
+  existing.forEach(function (n) { deleteRowByField(SHEET_NAMES.NILAI_SISWA, "ID", n.ID); });
+  (payload.Nilai || []).forEach(function (item) {
+    if (item.Nilai === null || item.Nilai === "" || item.Nilai === undefined) return; // lewati siswa yang belum diisi
+    appendRowFromObject(SHEET_NAMES.NILAI_SISWA, {
+      ID: generateId("NLS"),
+      ID_Penilaian: payload.ID_Penilaian,
+      ID_Siswa: item.ID_Siswa,
+      Nama_Siswa: item.Nama_Siswa,
+      Kelas: payload.Kelas,
+      Nilai: Number(item.Nilai),
+      CreatedAt: new Date()
+    });
+  });
+  return { status: "Nilai tersimpan." };
+}
+
+// payload: { Kelas, Mapel, Jenis } -> rekap pivot: setiap siswa x setiap kegiatan
+// penilaian (kolom), lengkap rata-rata keseluruhan. Dipakai guru untuk melihat/
+// mencetak rekap nilai satu kelas sekaligus.
+function apiGetRekapNilaiMapel(payload) {
+  const siswaKelas = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
+  }).sort(function (a, b) { return String(a.Nama).localeCompare(String(b.Nama)); });
+  let daftarPenilaian = readSheetAsObjects(SHEET_NAMES.PENILAIAN_MASTER)
+    .filter(function (r) { return r.Kelas === payload.Kelas && r.Mapel === payload.Mapel; });
+  if (payload.Jenis) daftarPenilaian = daftarPenilaian.filter(function (r) { return r.Jenis === payload.Jenis; });
+  daftarPenilaian.sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
+  const semuaNilai = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA);
+
+  const kolom = daftarPenilaian.map(function (p) { return { ID: p.ID, Judul: p.Judul, Tanggal: p.Tanggal, KKTP: p.KKTP }; });
+  const baris = siswaKelas.map(function (s) {
+    const nilaiPerKolom = kolom.map(function (k) {
+      const n = semuaNilai.find(function (x) { return x.ID_Penilaian === k.ID && x.ID_Siswa === s.ID; });
+      return n ? Number(n.Nilai) : null;
+    });
+    const terisi = nilaiPerKolom.filter(function (v) { return v !== null; });
+    const rataRata = terisi.length ? Math.round(terisi.reduce(function (a, b) { return a + b; }, 0) / terisi.length * 10) / 10 : null;
+    return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Nilai: nilaiPerKolom, RataRata: rataRata };
+  });
+  return { Kolom: kolom, Baris: baris };
+}
+
+// payload: { ID_Siswa } -> rekap nilai seorang siswa di semua mapel (dipakai akun Siswa)
+function apiGetNilaiSiswaSendiri(payload) {
+  const nilaiSiswa = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Siswa === payload.ID_Siswa; });
+  const semuaPenilaian = readSheetAsObjects(SHEET_NAMES.PENILAIAN_MASTER);
+  return nilaiSiswa.map(function (n) {
+    const p = semuaPenilaian.find(function (x) { return x.ID === n.ID_Penilaian; });
+    if (!p) return null;
+    return {
+      Mapel: p.Mapel, Jenis: p.Jenis, Judul: p.Judul, Tanggal: p.Tanggal,
+      Nilai: Number(n.Nilai), KKTP: p.KKTP, Tuntas: Number(n.Nilai) >= Number(p.KKTP)
+    };
+  }).filter(Boolean).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
 
 function apiGetDashboardManajemen(payload) {
