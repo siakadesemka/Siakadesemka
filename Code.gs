@@ -28,8 +28,8 @@ const CONFIG = {
   SCHOOL_LNG: 96.040818,      // Ganti dengan koordinat sekolah Anda
   CABANG_DINAS_LAT: 4.176717348593045,  // Koordinat Cabang Dinas Pendidikan (lokasi alternatif absen guru)
   CABANG_DINAS_LNG: 96.13676851392087,
-  RADIUS_GURU_METER: 150,
-  RADIUS_PKL_METER: 30,
+  RADIUS_GURU_METER: 500,
+  RADIUS_PKL_METER: 100,
   PHOTO_FOLDER_NAME: "SistemSekolah_Dokumentasi", // Folder Google Drive
   TIMEZONE: "GMT+7",
 
@@ -363,7 +363,8 @@ function doPost(e) {
     getRekapKehadiranMengajarHarian: apiGetRekapKehadiranMengajarHarian,
 
     saveTindakLanjut: apiSaveTindakLanjut,
-    getRiwayatTindakLanjut: apiGetRiwayatTindakLanjut
+    getRiwayatTindakLanjut: apiGetRiwayatTindakLanjut,
+    getHariLiburDalamRentang: apiGetHariLiburDalamRentang
   };
 
   const handler = routes[action];
@@ -1862,9 +1863,16 @@ function setupTriggerCekAbsen() {
 // ============================================================================
 
 function apiSaveHariLibur(payload) {
+  const tanggalNormal = formatDateOnly(payload.Tanggal);
+  const sudahAda = readSheetAsObjects(SHEET_NAMES.HARI_LIBUR).some(function (r) {
+    return formatDateOnly(r.Tanggal) === tanggalNormal;
+  });
+  if (sudahAda) {
+    throw new Error("Tanggal " + tanggalNormal + " sudah terdaftar sebagai hari libur. Periksa kembali daftar di bawah supaya tidak dobel.");
+  }
   const obj = {
     ID: generateId("LBR"),
-    Tanggal: payload.Tanggal,
+    Tanggal: tanggalNormal,
     Keterangan: payload.Keterangan || "",
     CreatedAt: new Date()
   };
@@ -1875,16 +1883,30 @@ function apiSaveHariLibur(payload) {
 // payload: { bulan (1-12), tahun }
 function apiGetHariLibur(payload) {
   const all = readSheetAsObjects(SHEET_NAMES.HARI_LIBUR);
-  if (!payload.bulan || !payload.tahun) return all;
-  return all.filter(function (r) {
+  const hasil = (!payload.bulan || !payload.tahun) ? all : all.filter(function (r) {
     const d = new Date(r.Tanggal);
     return (d.getMonth() + 1) === Number(payload.bulan) && d.getFullYear() === Number(payload.tahun);
   });
+  return hasil.sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
 }
 
 function apiDeleteHariLibur(payload) {
   deleteRowByField(SHEET_NAMES.HARI_LIBUR, "ID", payload.ID);
   return { deleted: payload.ID };
+}
+
+// payload: { startDate, endDate } -> daftar hari libur (di luar Sabtu/Minggu) yang
+// TERDAFTAR dalam rentang tanggal tsb, terurut. Dipakai di tampilan rekap kehadiran
+// (Wali Kelas/Waka Kesiswaan) supaya bisa dicek silang: kalau ada hari yang seharusnya
+// libur tapi belum terdaftar di sini, rekap kehadiran akan salah menganggapnya hari
+// efektif - jadi mudah ketahuan & Admin bisa segera melengkapi data Hari_Libur.
+function apiGetHariLiburDalamRentang(payload) {
+  const startDate = payload.startDate || formatDateOnly(new Date());
+  const endDate = payload.endDate || formatDateOnly(new Date());
+  return readSheetAsObjects(SHEET_NAMES.HARI_LIBUR).filter(function (r) {
+    const t = formatDateOnly(r.Tanggal);
+    return t >= startDate && t <= endDate;
+  }).sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
 }
 
 function getJumlahHariDalamBulan(bulan, tahun) {
@@ -2194,14 +2216,29 @@ function apiGetJadwalMengajarHarian(payload) {
   return { Tanggal: tanggal, Hari: hari, Slot: slotList };
 }
 
+// Memastikan pengguna yang mengirim aksi (ID_Piket) BENAR piket pada hari (Hari)
+// yang bersangkutan - supaya guru lain (yang bukan piket hari itu) tidak bisa ikut
+// meneruskan pesan atau mengisi keterangan atas nama guru lain.
+function pastikanSedangPiket(idPiket, hari) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const piket = users.find(function (u) { return u.ID === idPiket; });
+  if (!piket) throw new Error("Akun piket tidak ditemukan.");
+  const hariPiket = parseRoles(piket.Hari_Piket); // format sama "A, B" -> ["A","B"]
+  if (hariPiket.indexOf(hari) === -1) {
+    throw new Error("Anda bukan guru piket pada hari " + hari + ", tidak dapat menindaklanjuti jurnal guru lain.");
+  }
+}
+
 // payload: { ID_Guru, Nama_Guru, Kelas, Mapel, Jam_Ke, Tanggal, Hari, ID_Piket, Nama_Piket }
 // -> piket MENERUSKAN pesan ke akun guru bersangkutan supaya guru sendiri yang mengisi
 // keterangan (tidak langsung memutuskan status atas nama guru tsb).
 function apiTeruskanPesanPiket(payload) {
+  const hari = payload.Hari || namaHariDariTanggal(payload.Tanggal);
+  pastikanSedangPiket(payload.ID_Piket, hari);
   const obj = {
     ID: generateId("KMG"),
     Tanggal: payload.Tanggal,
-    Hari: payload.Hari || namaHariDariTanggal(payload.Tanggal),
+    Hari: hari,
     ID_Guru: payload.ID_Guru,
     Nama_Guru: payload.Nama_Guru,
     Kelas: payload.Kelas,
@@ -2226,10 +2263,12 @@ function apiIsiKeteranganPiket(payload) {
   if (["Tidak Mengajar", "Digantikan Piket"].indexOf(payload.Status) === -1) {
     throw new Error("Status harus 'Tidak Mengajar' atau 'Digantikan Piket'.");
   }
+  const hari = payload.Hari || namaHariDariTanggal(payload.Tanggal);
+  pastikanSedangPiket(payload.ID_Piket, hari);
   const obj = {
     ID: generateId("KMG"),
     Tanggal: payload.Tanggal,
-    Hari: payload.Hari || namaHariDariTanggal(payload.Tanggal),
+    Hari: hari,
     ID_Guru: payload.ID_Guru,
     Nama_Guru: payload.Nama_Guru,
     Kelas: payload.Kelas,

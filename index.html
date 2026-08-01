@@ -1412,7 +1412,7 @@ function GuruAbsenModule() {
     className: "space-y-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Absensi Guru / Pegawai",
-    subtitle: "Absen hanya bisa dilakukan dalam radius 150 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
+    subtitle: "Absen hanya bisa dilakukan dalam radius 150 meter dari Sekolah atau dari Cabang Dinas Pendidikan Wilayah Aceh Barat. Batas absen masuk pukul " + batasMasukLabel + (isJumat ? " (hari Jumat)" : "") + ", absen pulang mulai pukul " + batasPulangLabel + (isJumat ? " (hari Jumat)" : "") + "."
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
   }, msg), /*#__PURE__*/React.createElement("div", {
@@ -1430,7 +1430,7 @@ function GuruAbsenModule() {
     className: "text-xs text-gray-400 mt-2"
   }, "Absen pulang baru bisa dilakukan setelah pukul ", batasPulangLabel, "."), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-3"
-  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan Wilayah Kabupaten Aceh Barat\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
+  }, "Jika Anda berada di luar radius Sekolah maupun Cabang Dinas Pendidikan, sistem akan menampilkan notifikasi \"Anda Berada Diluar Radius Sekolah maupun Cabang Dinas Pendidikan\".")), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
     roles: ["Kepala Sekolah", "Tata Usaha"]
   }));
 }
@@ -2214,18 +2214,23 @@ function WaliKelasModule() {
   } = useAuth();
   const kelasWali = (user.Kelas_Wali || "").trim() || (user.Kelas_Diampu || "").split(",")[0]?.trim() || "";
   const [rekap, setRekap] = useState([]);
+  const [hariLibur, setHariLibur] = useState([]);
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(todayStr());
   const [error, setError] = useState("");
   const [showPrint, setShowPrint] = useState(false);
   async function load() {
     try {
-      const data = await apiCall("getRekapKehadiranKelas", {
+      const [data, libur] = await Promise.all([apiCall("getRekapKehadiranKelas", {
         Kelas: kelasWali,
         startDate,
         endDate
-      });
+      }), apiCall("getHariLiburDalamRentang", {
+        startDate,
+        endDate
+      })]);
       setRekap(data);
+      setHariLibur(libur);
     } catch (e) {
       setError(e.message);
     }
@@ -2257,6 +2262,16 @@ function WaliKelasModule() {
     label: "Cetak Rekap Kehadiran",
     onBeforePrint: () => setShowPrint(true)
   })), /*#__PURE__*/React.createElement("div", {
+    className: "no-print mb-4 text-xs bg-amber-50 border border-amber-200 rounded-lg p-3"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium text-amber-800 mb-1"
+  }, "📅 Hari libur terdaftar pada periode ini (", hariLibur.length, "):"), hariLibur.length === 0 ? /*#__PURE__*/React.createElement("p", {
+    className: "text-amber-700"
+  }, "Tidak ada hari libur khusus terdaftar selain Sabtu/Minggu pada periode ini. Jika ada tanggal merah/libur sekolah yang terlewat, tambahkan dulu di menu Admin \u2192 Kalender Hari Libur agar rekap di bawah tidak salah menganggapnya hari efektif.") : /*#__PURE__*/React.createElement("ul", {
+    className: "list-disc list-inside text-amber-700 space-y-0.5"
+  }, hariLibur.map(l => /*#__PURE__*/React.createElement("li", {
+    key: l.ID
+  }, formatTanggalIndo(l.Tanggal), l.Keterangan ? " - " + l.Keterangan : "")))), /*#__PURE__*/React.createElement("div", {
     className: "mb-4"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex justify-between text-sm mb-1"
@@ -2300,7 +2315,9 @@ function WaliKelasModule() {
     className: "text-lg font-bold text-center"
   }, "REKAP KEHADIRAN SISWA"), /*#__PURE__*/React.createElement("p", {
     className: "text-center text-sm mb-4"
-  }, "Kelas ", namaKelasLengkap(kelasWali), " · Periode ", startDate, " s.d. ", endDate), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+  }, "Kelas ", namaKelasLengkap(kelasWali), " · Periode ", startDate, " s.d. ", endDate), hariLibur.length > 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-xs mb-3"
+  }, "Hari libur pada periode ini: ", hariLibur.map(l => formatTanggalIndo(l.Tanggal)).join(", ")), /*#__PURE__*/React.createElement("table", null, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Hadir"), /*#__PURE__*/React.createElement("th", null, "Sakit"), /*#__PURE__*/React.createElement("th", null, "Izin"), /*#__PURE__*/React.createElement("th", null, "Alfa"))), /*#__PURE__*/React.createElement("tbody", null, rekap.map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: r.ID_Siswa
   }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Hadir), /*#__PURE__*/React.createElement("td", null, r.Sakit), /*#__PURE__*/React.createElement("td", null, r.Izin), /*#__PURE__*/React.createElement("td", null, r.Alfa))))), /*#__PURE__*/React.createElement(TandaTanganCetak, {
     tanggal: endDate,
@@ -2600,6 +2617,9 @@ function namaKelasLengkap(kode) {
 const HARI_LIST = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const JAM_KE_LIST = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+function getJumlahHariBulan(bulan, tahun) {
+  return new Date(tahun, bulan, 0).getDate();
+}
 function AdminGuruTab() {
   const [list, setList] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -3631,7 +3651,9 @@ function AdminHariLiburTab() {
       onChange: e => setTahun(Number(e.target.value)),
       className: "border rounded px-2 py-1 text-sm w-20"
     }))
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-500 mb-3 bg-blue-50 border border-blue-100 rounded-lg p-2"
+  }, "Total ", getJumlahHariBulan(bulan, tahun), " hari di bulan ini, dengan ", list.length, " hari libur khusus terdaftar (di luar Sabtu/Minggu). Pastikan semua tanggal merah nasional & agenda sekolah bulan ini sudah lengkap di sini SEBELUM mencetak rekap bulanan, supaya rekap kehadiran tidak keliru menganggap hari libur sebagai hari efektif."), /*#__PURE__*/React.createElement("div", {
     className: "divide-y max-h-96 overflow-y-auto"
   }, list.map(l => /*#__PURE__*/React.createElement("div", {
     key: l.ID,
@@ -3894,16 +3916,23 @@ const NAMA_HARI_INI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "S
 // Menggabungkan dua fungsi Piket (Poin Pelanggaran & Jurnal Guru) dalam satu menu
 // dengan tab, supaya sidebar tidak punya 2 menu "Piket" terpisah.
 function GuruPiketGabunganModule() {
+  const {
+    user
+  } = useAuth();
+  const hariPiket = (user.Hari_Piket || "").split(",").map(s => s.trim()).filter(Boolean);
+  const sedangPiket = hariPiket.includes(NAMA_HARI_INI);
   const [tab, setTab] = useState("pelanggaran");
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-2 mb-4 no-print"
+    className: "flex gap-2 mb-4 no-print flex-wrap items-center"
   }, /*#__PURE__*/React.createElement(Button, {
     variant: tab === "pelanggaran" ? "primary" : "outline",
     onClick: () => setTab("pelanggaran")
-  }, "🚨 Poin Pelanggaran"), /*#__PURE__*/React.createElement(Button, {
+  }, "🚨 Poin Pelanggaran"), sedangPiket && /*#__PURE__*/React.createElement(Button, {
     variant: tab === "jurnal" ? "primary" : "outline",
     onClick: () => setTab("jurnal")
-  }, "🔔 Jurnal Guru")), tab === "pelanggaran" ? /*#__PURE__*/React.createElement(GuruPiketModule, null) : /*#__PURE__*/React.createElement(GuruPiketJurnalMonitorModule, null));
+  }, "🔔 Jurnal Guru"), !sedangPiket && /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-gray-400"
+  }, "Menu Jurnal Guru hanya tersedia untuk guru piket hari ini (", NAMA_HARI_INI, "). Jadwal piket Anda: ", hariPiket.length ? hariPiket.join(", ") : "belum diatur Admin", ".")), (tab === "jurnal" && sedangPiket) ? /*#__PURE__*/React.createElement(GuruPiketJurnalMonitorModule, null) : /*#__PURE__*/React.createElement(GuruPiketModule, null));
 }
 function GuruPiketModule() {
   const {
@@ -4162,11 +4191,14 @@ function GuruPiketJurnalMonitorModule() {
   }
   const belumIsi = data.Slot.filter(s => !s.SudahMengisiJurnal);
   const sudahIsi = data.Slot.filter(s => s.SudahMengisiJurnal);
+  if (!sedangPiket) {
+    return /*#__PURE__*/React.createElement(Alert, {
+      type: "info"
+    }, "Menu ini hanya bisa dipakai oleh guru yang piket pada hari ", NAMA_HARI_INI, ". Jadwal piket Anda: ", hariPiket.length ? hariPiket.join(", ") : "belum diatur oleh Admin", ".");
+  }
   return /*#__PURE__*/React.createElement("div", {
     className: "space-y-4"
-  }, !sedangPiket && /*#__PURE__*/React.createElement(Alert, {
-    type: "info"
-  }, "Anda bukan guru piket pada hari ", NAMA_HARI_INI, ". Halaman ini tetap bisa dipakai untuk memantau, namun jadwal piket Anda: ", hariPiket.length ? hariPiket.join(", ") : "belum diatur oleh Admin", "."), /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement(Card, {
     title: "Guru Belum Mengisi Jurnal Mengajar",
     subtitle: data.Hari ? data.Hari + " · " + belumIsi.length + " slot belum diisi dari total " + data.Slot.length : "",
     actions: /*#__PURE__*/React.createElement("div", {
