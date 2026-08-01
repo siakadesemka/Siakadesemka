@@ -385,9 +385,7 @@ function doPost(e) {
     getRiwayatTindakLanjut: apiGetRiwayatTindakLanjut,
     getHariLiburDalamRentang: apiGetHariLiburDalamRentang,
 
-    saveTujuanPembelajaran: apiSaveTujuanPembelajaran,
-    getTujuanPembelajaran: apiGetTujuanPembelajaran,
-    deleteTujuanPembelajaran: apiDeleteTujuanPembelajaran,
+    getTujuanPembelajaranDariJurnal: apiGetTujuanPembelajaranDariJurnal,
     savePenilaian: apiSavePenilaian,
     getPenilaianList: apiGetPenilaianList,
     deletePenilaian: apiDeletePenilaian,
@@ -2371,44 +2369,34 @@ function apiGetRekapKehadiranMengajarHarian(payload) {
 }
 
 // ============================================================================
-// MODUL PENILAIAN: TUJUAN PEMBELAJARAN, PENILAIAN HARIAN & TENGAH SEMESTER
-// Mengikuti pola Kurikulum Merdeka: guru menetapkan Tujuan Pembelajaran (TP) per
-// Kelas+Mapel sebagai acuan, lalu membuat kegiatan Penilaian Harian atau Penilaian
-// Tengah Semester yang mengacu ke TP tsb, dan mengisi nilai per siswa.
+// MODUL PENILAIAN: PENILAIAN HARIAN & TENGAH SEMESTER
+// Tujuan Pembelajaran TIDAK dikelola terpisah - diambil langsung dari kolom
+// Tujuan_Pembelajaran yang sudah diisi guru di Jurnal Mengajar (Kelas+Mapel+guru
+// yang sama), supaya datanya selalu sama/sinkron antara Jurnal Mengajar dan
+// Penilaian, dan guru bisa memilih lebih dari satu TP sekaligus saat membuat
+// kegiatan penilaian.
 // ============================================================================
 
-// payload: { Kelas, Mapel, ID_Guru, Nama_Guru, Semester, Tahun_Ajaran, Kode_TP, Deskripsi_TP }
-function apiSaveTujuanPembelajaran(payload) {
-  const obj = {
-    ID: generateId("TP"),
-    Kelas: payload.Kelas,
-    Mapel: payload.Mapel,
-    ID_Guru: payload.ID_Guru,
-    Nama_Guru: payload.Nama_Guru,
-    Semester: payload.Semester,
-    Tahun_Ajaran: payload.Tahun_Ajaran,
-    Kode_TP: payload.Kode_TP,
-    Deskripsi_TP: payload.Deskripsi_TP,
-    CreatedAt: new Date()
-  };
-  appendRowFromObject(SHEET_NAMES.TUJUAN_PEMBELAJARAN, obj);
-  return obj;
-}
-
-// payload: { Kelas, Mapel }
-function apiGetTujuanPembelajaran(payload) {
-  return readSheetAsObjects(SHEET_NAMES.TUJUAN_PEMBELAJARAN)
-    .filter(function (r) { return r.Kelas === payload.Kelas && r.Mapel === payload.Mapel; })
-    .sort(function (a, b) { return String(a.Kode_TP).localeCompare(String(b.Kode_TP), undefined, { numeric: true }); });
-}
-
-function apiDeleteTujuanPembelajaran(payload) {
-  deleteRowByField(SHEET_NAMES.TUJUAN_PEMBELAJARAN, "ID", payload.ID);
-  return { deleted: payload.ID };
+// payload: { Kelas, Mapel, ID_Guru } -> daftar Tujuan Pembelajaran UNIK yang pernah
+// diisi guru ybs di Jurnal Mengajar untuk Kelas+Mapel tsb, terurut dari yang paling
+// baru dipakai.
+function apiGetTujuanPembelajaranDariJurnal(payload) {
+  const entri = readSheetAsObjects(SHEET_NAMES.JURNAL_MENGAJAR).filter(function (r) {
+    return r.ID_Guru === payload.ID_Guru && r.Kelas === payload.Kelas && r.Mapel === payload.Mapel && String(r.Tujuan_Pembelajaran || "").trim();
+  });
+  const peta = {}; // teks TP -> tanggal terakhir dipakai
+  entri.forEach(function (r) {
+    const teks = String(r.Tujuan_Pembelajaran).trim();
+    const tgl = new Date(r.Tanggal);
+    if (!peta[teks] || tgl > peta[teks]) peta[teks] = tgl;
+  });
+  return Object.keys(peta)
+    .map(function (teks) { return { Tujuan_Pembelajaran: teks, Tanggal_Terakhir: formatDateOnly(peta[teks]) }; })
+    .sort(function (a, b) { return new Date(b.Tanggal_Terakhir) - new Date(a.Tanggal_Terakhir); });
 }
 
 // payload: { Jenis ("Harian"/"Tengah Semester"), Kelas, Mapel, ID_Guru, Nama_Guru,
-// Tanggal, Judul, TP_Terkait (array Kode_TP/ID), KKTP, Semester, Tahun_Ajaran }
+// Tanggal, Judul, TP_Terkait (array teks Tujuan Pembelajaran, bisa lebih dari satu), KKTP, Semester, Tahun_Ajaran }
 function apiSavePenilaian(payload) {
   if (["Harian", "Tengah Semester"].indexOf(payload.Jenis) === -1) {
     throw new Error("Jenis penilaian harus 'Harian' atau 'Tengah Semester'.");
