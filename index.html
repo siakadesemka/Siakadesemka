@@ -46,6 +46,7 @@
 
 <!-- Library scan QR Code (kamera) & generator QR Code (kartu QR pribadi siswa), versi dikunci -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
 
 <!-- Library ekspor Excel (dipakai untuk unduh rekap absensi guru & siswa dalam format .xlsx) -->
@@ -753,6 +754,39 @@ function LoginPage() {
 /* ============================================================================
    MENU PER ROLE
    ============================================================================ */
+// Pengelompokan menu sidebar berdasarkan key, supaya menu yang banyak lebih rapi
+// dan gampang dicari. Satu key selalu berarti sama di role manapun ia dipakai,
+// jadi cukup didefinisikan sekali di sini (tidak perlu ubah ROLE_MENU per item).
+// Key yang tidak terdaftar otomatis masuk grup "Lainnya".
+const MENU_GROUP_ORDER = ["Utama", "Presensi", "Jurnal & Penilaian", "Pembinaan & Kedisiplinan", "Monitoring PKL", "Laporan & Rekap", "Lainnya"];
+const MENU_GROUPS = {
+  admin: "Utama", guru_home: "Utama", wali_dashboard: "Utama", siswa_home: "Utama", pkl_home: "Utama", manajemen: "Utama",
+  guru_absen: "Presensi", guru_scan_siswa: "Presensi", siswa_absen: "Presensi", perpus_scan: "Presensi", waka_kesiswaan_absensi: "Presensi",
+  guru_jurnal: "Jurnal & Penilaian", guru_penilaian: "Jurnal & Penilaian", guru_riwayat: "Jurnal & Penilaian", guru_mgmp: "Jurnal & Penilaian",
+  wali_cetak_jurnal_kelas: "Jurnal & Penilaian", wali_bimbingan: "Jurnal & Penilaian", wali_kaih: "Jurnal & Penilaian",
+  siswa_kaih: "Jurnal & Penilaian", pkl_jurnal: "Jurnal & Penilaian", waka_kesiswaan_7kaih: "Jurnal & Penilaian",
+  kepsek_7kaih: "Jurnal & Penilaian", bimbingan_preview: "Jurnal & Penilaian", pengawas_jurnal_guru: "Jurnal & Penilaian",
+  guru_piket: "Pembinaan & Kedisiplinan", wali_poin: "Pembinaan & Kedisiplinan", siswa_poin: "Pembinaan & Kedisiplinan", waka_kesiswaan_poin: "Pembinaan & Kedisiplinan",
+  guru_pkl_monitoring: "Monitoring PKL", kepsek_pkl_monitoring: "Monitoring PKL", waka_kurikulum_pkl_monitoring: "Monitoring PKL", waka_hubmi_pkl: "Monitoring PKL", kakomli_pkl: "Monitoring PKL",
+  kepsek_rekap_kehadiran_kelas: "Laporan & Rekap", waka_kurikulum_rekap_kehadiran_kelas: "Laporan & Rekap", waka_kurikulum_rekap_guru_mengajar: "Laporan & Rekap",
+  waka_kesiswaan_rekap_kelas: "Laporan & Rekap", kepsek_data_guru: "Laporan & Rekap", kepsek_data_siswa: "Laporan & Rekap",
+  pengawas_7kaih: "Laporan & Rekap", pengawas_data_guru: "Laporan & Rekap", pengawas_data_siswa: "Laporan & Rekap", kakomli_siswa: "Laporan & Rekap"
+};
+// Mengubah daftar menu datar menjadi kelompok {group, items[]} sesuai MENU_GROUP_ORDER,
+// urutan ASLI antar-item dalam satu grup tetap dipertahankan.
+function kelompokkanMenu(menu) {
+  const perGrup = {};
+  menu.forEach(m => {
+    const grup = MENU_GROUPS[m.key] || "Lainnya";
+    perGrup[grup] = perGrup[grup] || [];
+    perGrup[grup].push(m);
+  });
+  return MENU_GROUP_ORDER.map(g => ({
+    group: g,
+    items: perGrup[g] || []
+  })).filter(g => g.items.length > 0);
+}
+
 const ROLE_MENU = {
   "Admin": [{
     key: "admin",
@@ -1164,11 +1198,16 @@ function AppShell() {
     className: "text-xs text-primary-200"
   }, activeRole))), /*#__PURE__*/React.createElement("nav", {
     className: "flex-1 p-3 space-y-1 overflow-y-auto"
-  }, menu.map(m => /*#__PURE__*/React.createElement("button", {
+  }, kelompokkanMenu(menu).map(grp => /*#__PURE__*/React.createElement("div", {
+    key: grp.group,
+    className: "mb-3"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-primary-300 font-semibold"
+  }, grp.group), grp.items.map(m => /*#__PURE__*/React.createElement("button", {
     key: m.key,
     onClick: () => navigateTo(m.key),
     className: classNames("w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition", page === m.key ? "bg-accent text-primary-900 font-medium shadow" : "text-primary-100 hover:bg-white/10")
-  }, /*#__PURE__*/React.createElement("span", null, m.icon), m.label)), menu.length === 0 && /*#__PURE__*/React.createElement("p", {
+  }, /*#__PURE__*/React.createElement("span", null, m.icon), m.label)))), menu.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-primary-200 px-3 py-2"
   }, "Belum ada menu untuk role ini.")), /*#__PURE__*/React.createElement("div", {
     className: "p-3 border-t border-white/10 space-y-2"
@@ -1195,7 +1234,12 @@ function AppShell() {
   }, "☰"), history.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: goBack,
     className: "px-3 py-1.5 rounded-lg border border-white/30 text-sm text-white hover:bg-white/10 flex items-center gap-1"
-  }, "← Kembali"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, "← Kembali"), /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: user.Nama,
+    fotoUrlDrive: user.Foto_URL,
+    className: "w-10 h-10 rounded-full border border-white/30 shrink-0 hidden sm:flex",
+    iconClassName: "text-lg"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     className: "text-sm text-primary-100 hidden sm:block"
   }, "Selamat datang,"), /*#__PURE__*/React.createElement("p", {
     className: "font-semibold text-white"
@@ -1303,7 +1347,20 @@ function GuruHomeModule() {
   });
   return /*#__PURE__*/React.createElement("div", {
     className: "grid md:grid-cols-2 gap-4"
-  }, /*#__PURE__*/React.createElement(NotifikasiPiketCard, null), /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement(Card, {
+    className: "md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: user.Nama,
+    fotoUrlDrive: user.Foto_URL,
+    className: "w-14 h-14 rounded-full border shrink-0",
+    iconClassName: "text-2xl"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    className: "font-semibold text-gray-800"
+  }, user.Nama), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400"
+  }, "NIP. ", user.Identitas_NIP_NISN || "-")))), /*#__PURE__*/React.createElement(NotifikasiPiketCard, null), /*#__PURE__*/React.createElement(Card, {
     title: "Mata Pelajaran yang Diampu"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex flex-wrap gap-2"
@@ -2014,6 +2071,8 @@ function tahunAjaranBerjalan() {
 // FormBuatPenilaian di bawah), supaya datanya selalu sama/sinkron dengan jurnal.
 
 // Form membuat kegiatan Penilaian baru (Harian / Tengah Semester)
+const KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
+
 function FormBuatPenilaian({
   kelas,
   mapel,
@@ -2027,6 +2086,7 @@ function FormBuatPenilaian({
   } = useAuth();
   const [judul, setJudul] = useState("");
   const [tanggal, setTanggal] = useState(todayStr());
+  const [jenisNilai, setJenisNilai] = useState("Angka");
   const [kktp, setKktp] = useState(70);
   const [semester, setSemester] = useState(semesterBerjalan());
   const [tpTerpilih, setTpTerpilih] = useState([]);
@@ -2034,6 +2094,10 @@ function FormBuatPenilaian({
   const [error, setError] = useState("");
   function toggleTp(kode) {
     setTpTerpilih(prev => prev.includes(kode) ? prev.filter(k => k !== kode) : [...prev, kode]);
+  }
+  function ubahJenisNilai(v) {
+    setJenisNilai(v);
+    setKktp(v === "Kriteria" ? "Cakap" : 70);
   }
   async function simpan(e) {
     e.preventDefault();
@@ -2049,6 +2113,7 @@ function FormBuatPenilaian({
         Tanggal: tanggal,
         Judul: judul,
         TP_Terkait: tpTerpilih,
+        Jenis_Nilai: jenisNilai,
         KKTP: kktp,
         Semester: semester,
         Tahun_Ajaran: tahunAjaranBerjalan()
@@ -2066,7 +2131,7 @@ function FormBuatPenilaian({
     onSubmit: simpan,
     className: "space-y-3"
   }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
-    className: "grid sm:grid-cols-3 gap-2"
+    className: "grid sm:grid-cols-2 gap-2"
   }, /*#__PURE__*/React.createElement(Input, {
     label: "Judul Penilaian",
     value: judul,
@@ -2078,12 +2143,26 @@ function FormBuatPenilaian({
     type: "date",
     value: tanggal,
     onChange: e => setTanggal(e.target.value)
-  }), /*#__PURE__*/React.createElement(Input, {
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid sm:grid-cols-2 gap-2"
+  }, /*#__PURE__*/React.createElement(Select, {
+    label: "Jenis Nilai",
+    value: jenisNilai,
+    onChange: e => ubahJenisNilai(e.target.value),
+    options: ["Angka", "Kriteria"]
+  }), jenisNilai === "Angka" ? /*#__PURE__*/React.createElement(Input, {
     label: "KKTP (Kriteria Ketercapaian)",
     type: "number",
     value: kktp,
     onChange: e => setKktp(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }) : /*#__PURE__*/React.createElement(Select, {
+    label: "KKTP (Batas Minimal Tuntas)",
+    value: kktp,
+    onChange: e => setKktp(e.target.value),
+    options: KRITERIA_PENILAIAN
+  })), jenisNilai === "Kriteria" && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-gray-400 -mt-1"
+  }, "Guru akan mengisi nilai siswa memakai 4 kriteria: ", KRITERIA_PENILAIAN.join(", "), "."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     className: "text-sm font-medium text-gray-600 mb-1"
   }, "Tujuan Pembelajaran Terkait (bisa pilih lebih dari satu)"), daftarTp.length === 0 ? /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400"
@@ -2133,7 +2212,7 @@ function IsiNilaiPenilaian({
   function ubahNilai(idSiswa, val) {
     setNilai(prev => prev.map(n => n.ID_Siswa === idSiswa ? {
       ...n,
-      Nilai: val === "" ? null : Number(val)
+      Nilai: val === "" ? null : (penilaian.Jenis_Nilai === "Kriteria" ? val : Number(val))
     } : n));
   }
   async function simpanSemua() {
@@ -2154,9 +2233,12 @@ function IsiNilaiPenilaian({
       setLoading(false);
     }
   }
+  const belumTuntas = penilaian.Jenis_Nilai === "Kriteria"
+    ? n => n.Nilai !== null && KRITERIA_PENILAIAN.indexOf(n.Nilai) < KRITERIA_PENILAIAN.indexOf(penilaian.KKTP)
+    : n => n.Nilai !== null && n.Nilai < penilaian.KKTP;
   return /*#__PURE__*/React.createElement(Card, {
     title: "Isi Nilai - " + penilaian.Judul,
-    subtitle: formatTanggalIndo(penilaian.Tanggal) + " · KKTP " + penilaian.KKTP,
+    subtitle: formatTanggalIndo(penilaian.Tanggal) + " · KKTP " + penilaian.KKTP + " · Jenis Nilai: " + (penilaian.Jenis_Nilai || "Angka"),
     actions: /*#__PURE__*/React.createElement(Button, {
       variant: "outline",
       onClick: onSelesai
@@ -2170,14 +2252,23 @@ function IsiNilaiPenilaian({
     className: "py-2 flex items-center justify-between gap-3"
   }, /*#__PURE__*/React.createElement("span", {
     className: "text-sm"
-  }, i + 1, ". ", n.Nama_Siswa), /*#__PURE__*/React.createElement("input", {
+  }, i + 1, ". ", n.Nama_Siswa), penilaian.Jenis_Nilai === "Kriteria" ? /*#__PURE__*/React.createElement("select", {
+    value: n.Nilai === null ? "" : n.Nilai,
+    onChange: e => ubahNilai(n.ID_Siswa, e.target.value),
+    className: "w-40 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center " + (belumTuntas(n) ? "border-red-300 bg-red-50" : "")
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-"), KRITERIA_PENILAIAN.map(k => /*#__PURE__*/React.createElement("option", {
+    key: k,
+    value: k
+  }, k))) : /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: "0",
     max: "100",
     value: n.Nilai === null ? "" : n.Nilai,
     onChange: e => ubahNilai(n.ID_Siswa, e.target.value),
     placeholder: "-",
-    className: "w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center " + (n.Nilai !== null && n.Nilai < penilaian.KKTP ? "border-red-300 bg-red-50" : "")
+    className: "w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center " + (belumTuntas(n) ? "border-red-300 bg-red-50" : "")
   })))), /*#__PURE__*/React.createElement(Button, {
     onClick: simpanSemua,
     disabled: loading,
@@ -2348,7 +2439,7 @@ function PenilaianTab({
     className: "font-medium text-sm"
   }, p.Judul), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-500"
-  }, formatTanggalIndo(p.Tanggal), " · KKTP ", p.KKTP, " · ", p.JumlahSudahDinilai, "/", p.JumlahSiswaKelas, " siswa dinilai", p.TP_Terkait && p.TP_Terkait.length ? " · TP: " + p.TP_Terkait.join(", ") : "")), /*#__PURE__*/React.createElement("div", {
+  }, formatTanggalIndo(p.Tanggal), " · ", p.Jenis_Nilai === "Kriteria" ? "Kriteria" : "Angka", " · KKTP ", p.KKTP, " · ", p.JumlahSudahDinilai, "/", p.JumlahSiswaKelas, " siswa dinilai", p.TP_Terkait && p.TP_Terkait.length ? " · TP: " + p.TP_Terkait.join(", ") : "")), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2 shrink-0"
   }, /*#__PURE__*/React.createElement(Button, {
     variant: "secondary",
@@ -3171,7 +3262,14 @@ function AdminGuruTab() {
     className: "border-b last:border-0"
   }, /*#__PURE__*/React.createElement("td", {
     className: "py-2"
-  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Mapel_Diampu), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Roles.map(r => /*#__PURE__*/React.createElement(Badge, {
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: u.Nama,
+    fotoUrlDrive: u.Foto_URL,
+    className: "w-8 h-8 rounded-full shrink-0",
+    iconClassName: "text-sm"
+  }), u.Nama)), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Mapel_Diampu), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Roles.map(r => /*#__PURE__*/React.createElement(Badge, {
     key: r,
     color: "indigo"
   }, r))), /*#__PURE__*/React.createElement("td", {
@@ -3441,7 +3539,14 @@ function AdminSiswaTab() {
     className: "border-b last:border-0"
   }, /*#__PURE__*/React.createElement("td", {
     className: "py-2"
-  }, u.Nama), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama), /*#__PURE__*/React.createElement("td", null, String(u.Kelas_Diampu || "").indexOf("XII") !== -1 ? u.Guru_Pembimbing_PKL || "-" : "-"), /*#__PURE__*/React.createElement("td", {
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: u.Nama,
+    fotoUrlDrive: u.Foto_URL,
+    className: "w-8 h-8 rounded-full shrink-0",
+    iconClassName: "text-sm"
+  }), u.Nama)), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama), /*#__PURE__*/React.createElement("td", null, String(u.Kelas_Diampu || "").indexOf("XII") !== -1 ? u.Guru_Pembimbing_PKL || "-" : "-"), /*#__PURE__*/React.createElement("td", {
     className: "space-x-1"
   }, /*#__PURE__*/React.createElement(Button, {
     variant: "outline",
@@ -3898,6 +4003,7 @@ function AdminCetakKartuTab() {
   const [semua, setSemua] = useState([]);
   const [kelas, setKelas] = useState("");
   const [namaKepsek, setNamaKepsek] = useState("");
+  const [nipKepsek, setNipKepsek] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   async function load() {
@@ -3922,7 +4028,10 @@ function AdminCetakKartuTab() {
       scope: "all"
     }).then(all => {
       const kepsek = all.find(u => (u.Roles || []).includes("Kepala Sekolah"));
-      if (kepsek) setNamaKepsek(kepsek.Nama);
+      if (kepsek) {
+        setNamaKepsek(kepsek.Nama);
+        setNipKepsek(kepsek.Identitas_NIP_NISN);
+      }
     }).catch(() => {});
   }, []);
   const daftarKelas = useMemo(() => {
@@ -3962,7 +4071,7 @@ function AdminCetakKartuTab() {
   }, "KARTU TANDA PELAJAR", kelas ? " - KELAS " + kelas.toUpperCase() : ""), React.createElement("p", {
     className: "hidden print:block text-center text-sm mb-4"
   }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
-    className: "grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4"
+    className: "flex flex-wrap gap-4"
   }, semua.map(s => React.createElement("div", {
     key: "pelajar-" + s.ID,
     style: {
@@ -3970,7 +4079,8 @@ function AdminCetakKartuTab() {
     }
   }, React.createElement(KartuSiswa, {
     user: s,
-    namaKepsek: namaKepsek
+    namaKepsek: namaKepsek,
+    nipKepsek: nipKepsek
   })))), semua.length === 0 && React.createElement("p", {
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data siswa."), semua.length > 0 && React.createElement("div", {
@@ -3980,14 +4090,16 @@ function AdminCetakKartuTab() {
   }, "KARTU ANGGOTA PERPUSTAKAAN", kelas ? " - KELAS " + kelas.toUpperCase() : ""), React.createElement("p", {
     className: "hidden print:block text-center text-sm mb-4"
   }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
-    className: "grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4"
+    className: "flex flex-wrap gap-4"
   }, semua.map(s => React.createElement("div", {
     key: "perpus-" + s.ID,
     style: {
       breakInside: "avoid"
     }
   }, React.createElement(KartuPerpustakaan, {
-    user: s
+    user: s,
+    namaKepsek: namaKepsek,
+    nipKepsek: nipKepsek
   })))))));
 }
 function AdminHariLiburTab() {
@@ -4101,6 +4213,62 @@ function urlFotoAman(url) {
   const match = String(url).match(/[-\w]{25,}/); // ambil Google Drive file ID
   if (!match) return url;
   return "https://drive.google.com/thumbnail?id=" + match[0] + "&sz=w1600";
+}
+
+// Foto seseorang (guru/siswa) berdasarkan NAMA - dicari otomatis di folder
+// "icons/" dengan nama file yang SAMA PERSIS dengan nama orang tsb (ekstensi
+// dicoba berurutan: .jpg, .jpeg, .png). Kalau tidak ditemukan di folder icons,
+// jatuh ke foto hasil unggahan (Google Drive, jika ada), lalu ke ikon placeholder.
+function FotoOrang({
+  nama,
+  fotoUrlDrive,
+  className = "",
+  iconClassName = "text-2xl"
+}) {
+  const daftarSrc = useMemo(() => {
+    const list = [];
+    if (nama) {
+      const bersih = String(nama).trim();
+      ["jpg", "jpeg", "png", "JPG", "PNG"].forEach(ext => {
+        list.push("icons/" + encodeURIComponent(bersih) + "." + ext);
+      });
+    }
+    if (fotoUrlDrive) list.push(urlFotoAman(fotoUrlDrive));
+    return list;
+  }, [nama, fotoUrlDrive]);
+  const [step, setStep] = useState(0);
+  useEffect(() => setStep(0), [nama, fotoUrlDrive]);
+  if (step >= daftarSrc.length) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: classNames("flex items-center justify-center text-gray-300 bg-gray-100", className)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: iconClassName
+    }, "👤"));
+  }
+  return /*#__PURE__*/React.createElement("img", {
+    src: daftarSrc[step],
+    alt: nama || "Foto",
+    className: classNames("object-cover", className),
+    onError: () => setStep(s => s + 1)
+  });
+}
+
+// Mengunduh sebuah elemen DOM (mis. Kartu Pelajar/Perpustakaan) sebagai file JPG
+// resolusi tinggi. scale=4 supaya hasilnya tajam saat dicetak fisik.
+async function unduhElemenSebagaiJpg(elementRef, namaFile) {
+  if (!elementRef.current || !window.html2canvas) return;
+  const canvas = await window.html2canvas(elementRef.current, {
+    scale: 4,
+    useCORS: true,
+    backgroundColor: "#ffffff"
+  });
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = namaFile + ".jpg";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function formatTanggalIndo(dateStr) {
@@ -6001,117 +6169,141 @@ function InlineQrCode({
 }
 
 // Kartu identitas siswa (format kartu pelajar formal) - dipakai di dashboard siswa
+// Ukuran fisik tetap Kartu Pelajar & Kartu Perpustakaan: 8,6 cm x 5,4 cm (standar
+// ukuran kartu ID/ATM - ISO/IEC 7810 ID-1), dipakai sama persis baik saat tampil di
+// layar, dicetak, maupun diunduh sebagai JPG.
+const UKURAN_KARTU_STYLE = {
+  width: "8.6cm",
+  height: "5.4cm",
+  minWidth: "8.6cm",
+  minHeight: "5.4cm"
+};
+
 function KartuSiswa({
   user,
-  namaKepsek
+  namaKepsek,
+  nipKepsek
 }) {
   const kompetensi = String(user.Kelas_Diampu || "").indexOf("ATU") !== -1 ? "Agribisnis Ternak Unggas" : "Bisnis Digital";
   return /*#__PURE__*/React.createElement("div", {
-    className: "rounded-2xl overflow-hidden shadow-lg border border-gray-200 bg-white max-w-sm mx-auto relative"
+    className: "rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-white relative flex flex-col mx-auto",
+    style: UKURAN_KARTU_STYLE
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-primary-700 via-primary-800 to-primary-900 text-white px-4 py-3 flex items-center gap-2 relative overflow-hidden"
+    className: "bg-gradient-to-r from-primary-700 via-primary-800 to-primary-900 text-white px-2.5 py-1.5 flex items-center gap-1.5 relative overflow-hidden shrink-0"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "absolute right-8 bottom-0 w-16 h-16 rounded-full bg-accent/20"
-  }), /*#__PURE__*/React.createElement("img", {
-    src: "icons/logo.png",
-    alt: "Logo Sekolah",
-    className: "w-8 h-8 object-contain shrink-0 relative"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "relative"
-  }, /*#__PURE__*/React.createElement("p", {
-    className: "text-sm font-bold leading-tight tracking-wide"
-  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-primary-100 tracking-widest"
-  }, "KARTU TANDA PELAJAR"))), /*#__PURE__*/React.createElement("div", {
-    className: "p-4 flex gap-3"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "w-16 h-20 bg-gray-100 rounded border flex items-center justify-center text-2xl text-gray-300 shrink-0 overflow-hidden"
-  }, user.Foto_URL ? /*#__PURE__*/React.createElement("img", {
-    src: urlFotoAman(user.Foto_URL),
-    className: "w-full h-full object-cover"
-  }) : "👤"), /*#__PURE__*/React.createElement("table", {
-    className: "text-xs w-full"
-  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "Nama"), /*#__PURE__*/React.createElement("td", {
-    className: "font-semibold"
-  }, user.Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "TTL"), /*#__PURE__*/React.createElement("td", null, user.Tempat_Lahir || "-", ", ", user.Tanggal_Lahir ? formatTanggalIndo(user.Tanggal_Lahir) : "-")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "NISN"), /*#__PURE__*/React.createElement("td", null, user.Identitas_NIP_NISN)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "Kelas"), /*#__PURE__*/React.createElement("td", null, user.Kelas_Diampu)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "Komp. Keahlian"), /*#__PURE__*/React.createElement("td", null, kompetensi)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
-  }, "Alamat"), /*#__PURE__*/React.createElement("td", null, user.Alamat_Siswa || "-"))))), /*#__PURE__*/React.createElement("div", {
-    className: "px-4 pb-4 flex items-end justify-between gap-3 border-t pt-3"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2"
-  }, /*#__PURE__*/React.createElement(InlineQrCode, {
-    idSiswa: user.ID,
-    size: 60
-  }), /*#__PURE__*/React.createElement("p", {
-    className: "text-[9px] text-gray-400 max-w-[80px] leading-tight"
-  }, "Scan untuk absen gerbang & perpustakaan")), /*#__PURE__*/React.createElement("div", {
-    className: "text-center text-xs"
-  }, /*#__PURE__*/React.createElement("p", {
-    className: "text-gray-400 mb-6"
-  }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
-    className: "font-semibold border-t pt-1"
-  }, namaKepsek || NAMA_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
-    className: "h-2 bg-gradient-to-r from-accent via-primary-600 to-primary-900"
-  }));
-}
-
-// Kartu anggota perpustakaan - dipakai di dashboard siswa
-function KartuPerpustakaan({
-  user
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    className: "rounded-2xl overflow-hidden shadow-lg border border-gray-200 bg-white max-w-sm mx-auto"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-secondary-600 via-emerald-700 to-emerald-800 text-white px-4 py-3 flex items-center gap-2 relative overflow-hidden"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/10"
+    className: "absolute -right-6 -top-6 w-20 h-20 rounded-full bg-white/10"
   }), /*#__PURE__*/React.createElement("img", {
     src: "icons/logo.png",
     alt: "Logo Sekolah",
     className: "w-6 h-6 object-contain shrink-0 relative"
   }), /*#__PURE__*/React.createElement("div", {
-    className: "relative"
+    className: "relative leading-none"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "text-xs font-bold leading-tight"
-  }, "PERPUSTAKAAN SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] text-emerald-100 tracking-widest"
-  }, "KARTU ANGGOTA PERPUSTAKAAN"))), /*#__PURE__*/React.createElement("div", {
-    className: "p-4 text-xs flex gap-3"
-  }, /*#__PURE__*/React.createElement("table", {
-    className: "w-full"
+    className: "text-[11px] font-bold leading-tight tracking-wide"
+  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[8px] text-primary-100 tracking-widest mt-0.5"
+  }, "KARTU TANDA PELAJAR"))), /*#__PURE__*/React.createElement("div", {
+    className: "px-2.5 py-1.5 flex gap-2 flex-1 min-h-0"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: user.Nama,
+    fotoUrlDrive: user.Foto_URL,
+    className: "w-14 h-[4.6rem] rounded border shrink-0",
+    iconClassName: "text-xl"
+  }), /*#__PURE__*/React.createElement("table", {
+    className: "text-[9px] w-full leading-tight"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
+    className: "text-gray-400 pr-1 align-top w-12"
   }, "Nama"), /*#__PURE__*/React.createElement("td", {
     className: "font-semibold"
   }, user.Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
+    className: "text-gray-400 pr-1 align-top"
+  }, "TTL"), /*#__PURE__*/React.createElement("td", null, user.Tempat_Lahir || "-", ", ", user.Tanggal_Lahir ? formatTanggalIndo(user.Tanggal_Lahir) : "-")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top"
   }, "NISN"), /*#__PURE__*/React.createElement("td", null, user.Identitas_NIP_NISN)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
+    className: "text-gray-400 pr-1 align-top"
   }, "Kelas"), /*#__PURE__*/React.createElement("td", null, user.Kelas_Diampu)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-2 align-top"
+    className: "text-gray-400 pr-1 align-top"
+  }, "Komp."), /*#__PURE__*/React.createElement("td", null, kompetensi)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top"
+  }, "Alamat"), /*#__PURE__*/React.createElement("td", {
+    className: "leading-tight"
+  }, user.Alamat_Siswa || "-"))))), /*#__PURE__*/React.createElement("div", {
+    className: "px-2.5 pb-1.5 flex items-center justify-between gap-2 border-t pt-1.5 shrink-0"
+  }, /*#__PURE__*/React.createElement(InlineQrCode, {
+    idSiswa: user.ID,
+    size: 82
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "text-center text-[8px] leading-tight"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
+    className: "font-semibold mt-3 border-t pt-0.5"
+  }, namaKepsek || NAMA_KEPALA_SEKOLAH), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, "NIP. ", nipKepsek || NIP_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
+    className: "h-1.5 bg-gradient-to-r from-accent via-primary-600 to-primary-900 shrink-0"
+  }));
+}
+
+// Kartu anggota perpustakaan - dipakai di dashboard siswa
+function KartuPerpustakaan({
+  user,
+  namaKepsek,
+  nipKepsek
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-white relative flex flex-col mx-auto",
+    style: UKURAN_KARTU_STYLE
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bg-gradient-to-r from-secondary-600 via-emerald-700 to-emerald-800 text-white px-2.5 py-1.5 flex items-center gap-1.5 relative overflow-hidden shrink-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute -right-6 -top-6 w-20 h-20 rounded-full bg-white/10"
+  }), /*#__PURE__*/React.createElement("img", {
+    src: "icons/logo.png",
+    alt: "Logo Sekolah",
+    className: "w-6 h-6 object-contain shrink-0 relative"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "relative leading-none"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-[10px] font-bold leading-tight"
+  }, "PERPUSTAKAAN SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-[8px] text-emerald-100 tracking-widest mt-0.5"
+  }, "KARTU ANGGOTA PERPUSTAKAAN"))), /*#__PURE__*/React.createElement("div", {
+    className: "px-2.5 py-1.5 flex gap-2 flex-1 min-h-0"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: user.Nama,
+    fotoUrlDrive: user.Foto_URL,
+    className: "w-14 h-[4.6rem] rounded border shrink-0",
+    iconClassName: "text-xl"
+  }), /*#__PURE__*/React.createElement("table", {
+    className: "text-[9px] w-full leading-tight"
+  }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top w-12"
+  }, "Nama"), /*#__PURE__*/React.createElement("td", {
+    className: "font-semibold"
+  }, user.Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top"
+  }, "NISN"), /*#__PURE__*/React.createElement("td", null, user.Identitas_NIP_NISN)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top"
+  }, "Kelas"), /*#__PURE__*/React.createElement("td", null, user.Kelas_Diampu)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-1 align-top"
   }, "Status"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
     color: "green"
   }, "Anggota Aktif")))))), /*#__PURE__*/React.createElement("div", {
-    className: "px-4 pb-4 flex items-center justify-between gap-3 border-t pt-3"
+    className: "px-2.5 pb-1.5 flex items-center justify-between gap-2 border-t pt-1.5 shrink-0"
   }, /*#__PURE__*/React.createElement(InlineQrCode, {
     idSiswa: user.ID,
-    size: 64
-  }), /*#__PURE__*/React.createElement("p", {
-    className: "text-[9px] text-gray-400 max-w-[180px] leading-tight text-right"
-  }, "Tunjukkan QR pada kartu ini untuk absen kunjungan perpustakaan.")), /*#__PURE__*/React.createElement("div", {
-    className: "h-2 bg-gradient-to-r from-emerald-400 via-secondary-600 to-emerald-800"
+    size: 82
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "text-center text-[8px] leading-tight"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
+    className: "font-semibold mt-3 border-t pt-0.5"
+  }, namaKepsek || NAMA_KEPALA_SEKOLAH), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, "NIP. ", nipKepsek || NIP_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
+    className: "h-1.5 bg-gradient-to-r from-emerald-400 via-secondary-600 to-emerald-800 shrink-0"
   }));
 }
 function SiswaHomeModule() {
@@ -6120,6 +6312,10 @@ function SiswaHomeModule() {
   } = useAuth();
   const [rekap, setRekap] = useState([]);
   const [namaKepsek, setNamaKepsek] = useState("");
+  const [nipKepsek, setNipKepsek] = useState("");
+  const [unduhLoading, setUnduhLoading] = useState("");
+  const refKartuPelajar = useRef(null);
+  const refKartuPerpus = useRef(null);
   useEffect(() => {
     apiCall("getRekapAbsenSiswa", {
       ID_Siswa: user.ID
@@ -6130,9 +6326,20 @@ function SiswaHomeModule() {
       scope: "all"
     }).then(all => {
       const kepsek = all.find(u => (u.Roles || []).includes("Kepala Sekolah"));
-      if (kepsek) setNamaKepsek(kepsek.Nama);
+      if (kepsek) {
+        setNamaKepsek(kepsek.Nama);
+        setNipKepsek(kepsek.Identitas_NIP_NISN);
+      }
     }).catch(() => {});
   }, []);
+  async function unduhKartu(ref, jenis) {
+    setUnduhLoading(jenis);
+    try {
+      await unduhElemenSebagaiJpg(ref, jenis + "_" + user.Nama);
+    } finally {
+      setUnduhLoading("");
+    }
+  }
   const perMapel = useMemo(() => {
     const map = {};
     rekap.forEach(r => {
@@ -6150,14 +6357,29 @@ function SiswaHomeModule() {
     className: "grid md:grid-cols-2 gap-4"
   }, /*#__PURE__*/React.createElement(Card, {
     title: "Kartu Siswa"
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: refKartuPelajar
   }, /*#__PURE__*/React.createElement(KartuSiswa, {
     user: user,
-    namaKepsek: namaKepsek
-  })), /*#__PURE__*/React.createElement(Card, {
+    namaKepsek: namaKepsek,
+    nipKepsek: nipKepsek
+  })), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "w-full mt-3",
+    onClick: () => unduhKartu(refKartuPelajar, "Kartu_Pelajar")
+  }, unduhLoading === "Kartu_Pelajar" ? /*#__PURE__*/React.createElement(Spinner, null) : "⬇️ Unduh Kartu Pelajar (JPG)")), /*#__PURE__*/React.createElement(Card, {
     title: "Kartu Perpustakaan"
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: refKartuPerpus
   }, /*#__PURE__*/React.createElement(KartuPerpustakaan, {
-    user: user
-  }), /*#__PURE__*/React.createElement("p", {
+    user: user,
+    namaKepsek: namaKepsek,
+    nipKepsek: nipKepsek
+  })), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    className: "w-full mt-3",
+    onClick: () => unduhKartu(refKartuPerpus, "Kartu_Perpustakaan")
+  }, unduhLoading === "Kartu_Perpustakaan" ? /*#__PURE__*/React.createElement(Spinner, null) : "⬇️ Unduh Kartu Perpustakaan (JPG)"), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400 mt-3 text-center"
   }, "QR pada kedua kartu di atas dipakai untuk absen gerbang, kunjungan perpustakaan, dan Literasi Al-Qur'an (Jumat).")), /*#__PURE__*/React.createElement(Card, {
     title: "Rekap Kehadiran per Mata Pelajaran"
@@ -6527,9 +6749,9 @@ function SiswaPklHomeModule() {
     className: "md:col-span-2"
   }, locError && /*#__PURE__*/React.createElement(Alert, null, locError), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
-  }, msg), !info.Sudah_Isi_Jurnal_Hari_Ini ? /*#__PURE__*/React.createElement(Alert, {
-    type: "info"
-  }, "Anda wajib mengisi Jurnal Harian PKL terlebih dahulu sebelum tombol absen terbuka. Silakan buka menu \"Jurnal Harian PKL\".") : /*#__PURE__*/React.createElement(Button, {
+  }, msg), info.Sudah_Absen_Hari_Ini ? /*#__PURE__*/React.createElement(Alert, {
+    type: "success"
+  }, "Anda sudah absen PKL hari ini. Jangan lupa isi Jurnal Harian PKL di menu \"Jurnal Harian PKL\".") : /*#__PURE__*/React.createElement(Button, {
     onClick: doAbsen,
     disabled: loading
   }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Absen Sekarang")), /*#__PURE__*/React.createElement(Card, {
@@ -6554,10 +6776,17 @@ function SiswaPklJurnalModule() {
   const {
     user
   } = useAuth();
+  const [info, setInfo] = useState(null);
   const [kegiatan, setKegiatan] = useState("");
   const [foto, setFoto] = useState(null);
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState("");
+  function load() {
+    apiCall("getInfoPklSiswa", {
+      ID_Siswa: user.ID
+    }).then(setInfo).catch(e => setError(e.message));
+  }
+  useEffect(load, []);
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg(null);
@@ -6569,13 +6798,29 @@ function SiswaPklJurnalModule() {
         Kegiatan_PKL: kegiatan,
         Foto_Base64: foto
       });
-      setMsg("Jurnal harian PKL tersimpan. Tombol absen sudah terbuka di menu Beranda PKL.");
+      setMsg("Jurnal harian PKL tersimpan.");
       showAcehGreeting();
       setKegiatan("");
       setFoto(null);
+      load();
     } catch (e2) {
       setError(e2.message);
     }
+  }
+  if (!info) return /*#__PURE__*/React.createElement(Card, null, error ? /*#__PURE__*/React.createElement(Alert, null, error) : /*#__PURE__*/React.createElement(Spinner, null));
+  if (!info.Sudah_Absen_Hari_Ini) {
+    return /*#__PURE__*/React.createElement(Card, {
+      title: "Jurnal Harian PKL"
+    }, /*#__PURE__*/React.createElement(Alert, {
+      type: "info"
+    }, "Silakan Absen PKL terlebih dahulu di menu \"Beranda PKL\" sebelum mengisi Jurnal Harian."));
+  }
+  if (info.Sudah_Isi_Jurnal_Hari_Ini) {
+    return /*#__PURE__*/React.createElement(Card, {
+      title: "Jurnal Harian PKL"
+    }, /*#__PURE__*/React.createElement(Alert, {
+      type: "success"
+    }, "Jurnal Harian PKL hari ini sudah diisi. Sampai jumpa besok!"));
   }
   return /*#__PURE__*/React.createElement(Card, {
     title: "Jurnal Harian PKL",

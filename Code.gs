@@ -209,7 +209,7 @@ const SHEET_SCHEMAS = {
   // tertentu, mengacu ke satu/lebih Tujuan Pembelajaran.
   Penilaian_Master: [
     "ID", "Jenis", "Kelas", "Mapel", "ID_Guru", "Nama_Guru", "Tanggal", "Judul",
-    "TP_Terkait_JSON", "KKTP", "Semester", "Tahun_Ajaran", "CreatedAt"
+    "TP_Terkait_JSON", "Jenis_Nilai", "KKTP", "Semester", "Tahun_Ajaran", "CreatedAt"
   ],
   // Nilai per siswa untuk satu Penilaian_Master (ID_Penilaian)
   Nilai_Siswa: [
@@ -1017,46 +1017,18 @@ function apiGetInfoPklSiswa(payload) {
     Tanggal_Mulai_PKL: siswa.Tanggal_Mulai_PKL,
     Tanggal_Selesai_PKL: siswa.Tanggal_Selesai_PKL,
     Sisa_Hari_PKL: sisaHari,
-    Sudah_Isi_Jurnal_Hari_Ini: !!jurnalHariIni,
+    Sudah_Absen_Hari_Ini: !!(jurnalHariIni && jurnalHariIni.Status === "Hadir"),
+    Sudah_Isi_Jurnal_Hari_Ini: !!(jurnalHariIni && String(jurnalHariIni.Kegiatan_PKL || "").trim()),
     Jumlah_Kehadiran: riwayatKehadiran.filter(function (r) { return r.Status === "Hadir"; }).length,
     Riwayat_Kehadiran: riwayatKehadiran.sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); })
   };
 }
 
-// Gerbang: siswa WAJIB isi jurnal dulu sebelum tombol absen terbuka.
-// payload: { ID_Siswa, Nama_Siswa, Kegiatan_PKL, Foto_Base64 }
-function apiSaveJurnalPkl(payload) {
-  const today = formatDateOnly(new Date());
-  const already = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).find(function (r) {
-    return r.ID_Siswa === payload.ID_Siswa && formatDateOnly(r.Tanggal) === today;
-  });
-  if (already) throw new Error("Jurnal PKL hari ini sudah diisi.");
-
-  let fotoUrl = "";
-  if (payload.Foto_Base64) {
-    fotoUrl = apiUploadPhoto({ base64Data: payload.Foto_Base64, fileName: "pkl_" + payload.ID_Siswa + "_" + today + ".jpg" }).url;
-  }
-
-  const obj = {
-    ID: generateId("PKL"),
-    ID_Siswa: payload.ID_Siswa,
-    Nama_Siswa: payload.Nama_Siswa,
-    Tanggal: today,
-    Jam: "",
-    Kegiatan_PKL: payload.Kegiatan_PKL,
-    Foto_URL: fotoUrl,
-    Lat: "",
-    Long: "",
-    Jarak_Meter: "",
-    Status: "Jurnal Terisi - Menunggu Absen",
-    CreatedAt: new Date()
-  };
-  appendRowFromObject(SHEET_NAMES.JURNAL_ABSEN_PKL, obj);
-  return obj;
-}
-
-// Setelah jurnal terisi, siswa baru boleh absen dengan validasi GPS radius 30m
-// payload: { ID_Siswa, Lat, Long }
+// Siswa PKL sekarang WAJIB ABSEN DULU (validasi GPS radius) sebelum bisa mengisi
+// Jurnal Harian PKL - urutannya dibalik dari sebelumnya (jurnal dulu baru absen).
+// Saat absen berhasil, kirim notifikasi WA ke ORANG TUA dan ke GURU PEMBIMBING PKL
+// bahwa siswa sudah hadir/masuk PKL hari ini.
+// payload: { ID_Siswa, Nama_Siswa, Lat, Long }
 function apiAbsenPkl(payload) {
   const users = readSheetAsObjects(SHEET_NAMES.USERS);
   const siswa = users.find(function (u) { return u.ID === payload.ID_Siswa; });
@@ -1064,25 +1036,72 @@ function apiAbsenPkl(payload) {
   if (!siswa.Lat_PKL || !siswa.Long_PKL) throw new Error("Koordinat lokasi PKL belum diatur oleh Admin.");
 
   const today = formatDateOnly(new Date());
-  const jurnal = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).find(function (r) {
+  const existing = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).find(function (r) {
     return r.ID_Siswa === payload.ID_Siswa && formatDateOnly(r.Tanggal) === today;
   });
-  if (!jurnal) throw new Error("Isi Jurnal Harian PKL terlebih dahulu sebelum melakukan absen.");
-  if (jurnal.Status === "Hadir") throw new Error("Anda sudah absen PKL hari ini.");
+  if (existing && existing.Status === "Hadir") throw new Error("Anda sudah absen PKL hari ini.");
 
   const jarak = haversineMeters(siswa.Lat_PKL, siswa.Long_PKL, payload.Lat, payload.Long);
   if (jarak > CONFIG.RADIUS_PKL_METER) {
     throw new Error("Anda Berada Diluar Radius Lokasi PKL (jarak " + Math.round(jarak) + " m, maksimal " + CONFIG.RADIUS_PKL_METER + " m).");
   }
+  const jam = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "HH:mm:ss");
+
+  if (existing) {
+    updateRowByField(SHEET_NAMES.JURNAL_ABSEN_PKL, "ID", existing.ID, {
+      Jam: jam,
+      Lat: payload.Lat,
+      Long: payload.Long,
+      Jarak_Meter: Math.round(jarak),
+      Status: "Hadir"
+    });
+  } else {
+    appendRowFromObject(SHEET_NAMES.JURNAL_ABSEN_PKL, {
+      ID: generateId("PKL"),
+      ID_Siswa: payload.ID_Siswa,
+      Nama_Siswa: payload.Nama_Siswa || siswa.Nama,
+      Tanggal: today,
+      Jam: jam,
+      Kegiatan_PKL: "",
+      Foto_URL: "",
+      Lat: payload.Lat,
+      Long: payload.Long,
+      Jarak_Meter: Math.round(jarak),
+      Status: "Hadir",
+      CreatedAt: new Date()
+    });
+  }
+
+  kirimNotifikasiPklMasuk(siswa, today, jam);
+  return { status: "Absen PKL berhasil dicatat", jarak: Math.round(jarak) };
+}
+
+// Mengisi Jurnal Harian PKL - HANYA BOLEH setelah siswa absen hari ini (Status
+// "Hadir" pada baris hari ini). Mengisi kolom Kegiatan_PKL & Foto pada baris YANG
+// SAMA dengan hasil absen (bukan membuat baris baru).
+// payload: { ID_Siswa, Nama_Siswa, Kegiatan_PKL, Foto_Base64 }
+function apiSaveJurnalPkl(payload) {
+  const today = formatDateOnly(new Date());
+  const jurnal = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).find(function (r) {
+    return r.ID_Siswa === payload.ID_Siswa && formatDateOnly(r.Tanggal) === today;
+  });
+  if (!jurnal || jurnal.Status !== "Hadir") {
+    throw new Error("Silakan lakukan Absen PKL terlebih dahulu sebelum mengisi Jurnal Harian.");
+  }
+  if (String(jurnal.Kegiatan_PKL || "").trim()) {
+    throw new Error("Jurnal PKL hari ini sudah diisi.");
+  }
+
+  let fotoUrl = "";
+  if (payload.Foto_Base64) {
+    fotoUrl = apiUploadPhoto({ base64Data: payload.Foto_Base64, fileName: "pkl_" + payload.ID_Siswa + "_" + today + ".jpg" }).url;
+  }
 
   updateRowByField(SHEET_NAMES.JURNAL_ABSEN_PKL, "ID", jurnal.ID, {
-    Jam: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "HH:mm:ss"),
-    Lat: payload.Lat,
-    Long: payload.Long,
-    Jarak_Meter: Math.round(jarak),
-    Status: "Hadir"
+    Kegiatan_PKL: payload.Kegiatan_PKL,
+    Foto_URL: fotoUrl
   });
-  return { status: "Absen PKL berhasil dicatat", jarak: Math.round(jarak) };
+  return { status: "Jurnal harian PKL tersimpan." };
 }
 
 // ============================================================================
@@ -1846,8 +1865,27 @@ function kirimNotifikasiOrangTua(siswa, tipe, tanggal, jam) {
   kirimWA(siswa.No_HP_OrangTua, pesan);
 }
 
+// Dikirim saat siswa PKL berhasil absen masuk - ke ORANG TUA siswa DAN ke Guru
+// Pembimbing PKL siswa tsb, supaya keduanya tahu siswa sudah hadir di lokasi PKL.
+function kirimNotifikasiPklMasuk(siswa, tanggal, jam) {
+  const pesanOrtu = "Ananda " + siswa.Nama + " sudah hadir/masuk PKL di " + (siswa.Tempat_PKL || "tempat PKL") + " pada tanggal " + formatTanggalPanjangIndo(tanggal) + ", jam " + jam + ".";
+  kirimWA(siswa.No_HP_OrangTua, pesanOrtu);
+
+  if (siswa.Guru_Pembimbing_PKL) {
+    const guruList = parseNamaGuruList(siswa.Guru_Pembimbing_PKL);
+    const users = readSheetAsObjects(SHEET_NAMES.USERS);
+    guruList.forEach(function (namaGuru) {
+      const guru = users.find(function (u) { return u.Nama === namaGuru; });
+      if (!guru || !guru.No_HP) return;
+      const pesanGuru = "Siswa bimbingan PKL Bapak/Ibu, " + siswa.Nama + " (" + siswa.Kelas_Diampu + "), sudah hadir/masuk PKL di " + (siswa.Tempat_PKL || "tempat PKL") + " pada tanggal " + formatTanggalPanjangIndo(tanggal) + ", jam " + jam + ".";
+      kirimWA(guru.No_HP, pesanGuru);
+    });
+  }
+}
+
 // Dipanggil otomatis tiap hari pukul 10:00 lewat trigger (lihat setupTriggerCekAbsen).
-// Mengecek siswa yang belum absen masuk, lalu mengirim WA ke masing-masing Guru Wali.
+// Mengecek siswa yang belum absen masuk, lalu mengirim WA LANGSUNG ke ORANG TUA
+// masing-masing siswa (BUKAN ke Guru Wali - pesan terusan WA cukup untuk orang tua saja).
 function cekSiswaBelumAbsenPagi() {
   const today = formatDateOnly(new Date());
   const users = readSheetAsObjects(SHEET_NAMES.USERS);
@@ -1857,21 +1895,10 @@ function cekSiswaBelumAbsenPagi() {
     if (formatDateOnly(r.Tanggal) === today && r.Jam_Masuk) sudahSet[r.ID_Siswa] = true;
   });
   const belum = siswaAll.filter(function (s) { return !sudahSet[s.ID]; });
-  if (belum.length === 0) return;
-
-  const byGuruWali = {};
   belum.forEach(function (s) {
-    const namaWali = s.Guru_Wali_Nama || "(Belum ada Guru Wali)";
-    byGuruWali[namaWali] = byGuruWali[namaWali] || [];
-    byGuruWali[namaWali].push(s);
-  });
-
-  Object.keys(byGuruWali).forEach(function (namaGuruWali) {
-    const guru = users.find(function (u) { return u.Nama === namaGuruWali; });
-    if (!guru || !guru.No_HP) return;
-    const daftar = byGuruWali[namaGuruWali].map(function (s) { return "- " + s.Nama + " (" + s.Kelas_Diampu + ")"; }).join("\n");
-    const pesan = "Pemberitahuan SIAKAD ESEMKASA:\nSampai pukul " + CONFIG.JAM_BATAS_CEK_BELUM_ABSEN + " hari ini (" + formatTanggalPanjangIndo(today) + "), siswa perwalian Bapak/Ibu berikut belum tercatat absen masuk:\n" + daftar;
-    kirimWA(guru.No_HP, pesan);
+    if (!s.No_HP_OrangTua) return;
+    const pesan = "Pemberitahuan SIAKAD ESEMKASA:\nSampai pukul " + CONFIG.JAM_BATAS_CEK_BELUM_ABSEN + " hari ini (" + formatTanggalPanjangIndo(today) + "), ananda " + s.Nama + " (Kelas " + s.Kelas_Diampu + ") belum tercatat absen masuk sekolah. Mohon dikonfirmasi kehadirannya.";
+    kirimWA(s.No_HP_OrangTua, pesan);
   });
 }
 
@@ -2395,12 +2422,25 @@ function apiGetTujuanPembelajaranDariJurnal(payload) {
     .sort(function (a, b) { return new Date(b.Tanggal_Terakhir) - new Date(a.Tanggal_Terakhir); });
 }
 
+// 4 tingkat kriteria kualitatif (dipakai sebagai alternatif nilai angka), sesuai
+// urutan capaian dari yang paling rendah ke paling tinggi.
+const KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
+function ordinalKriteria(label) {
+  return KRITERIA_PENILAIAN.indexOf(String(label || "").trim());
+}
+
 // payload: { Jenis ("Harian"/"Tengah Semester"), Kelas, Mapel, ID_Guru, Nama_Guru,
-// Tanggal, Judul, TP_Terkait (array teks Tujuan Pembelajaran, bisa lebih dari satu), KKTP, Semester, Tahun_Ajaran }
+// Tanggal, Judul, TP_Terkait (array teks Tujuan Pembelajaran, bisa lebih dari satu),
+// Jenis_Nilai ("Angka"/"Kriteria"), KKTP (angka jika Jenis_Nilai=Angka, salah satu
+// KRITERIA_PENILAIAN jika Jenis_Nilai=Kriteria), Semester, Tahun_Ajaran }
 function apiSavePenilaian(payload) {
   if (["Harian", "Tengah Semester"].indexOf(payload.Jenis) === -1) {
     throw new Error("Jenis penilaian harus 'Harian' atau 'Tengah Semester'.");
   }
+  const jenisNilai = payload.Jenis_Nilai === "Kriteria" ? "Kriteria" : "Angka";
+  const kktp = jenisNilai === "Kriteria"
+    ? (KRITERIA_PENILAIAN.indexOf(payload.KKTP) !== -1 ? payload.KKTP : "Cakap")
+    : (payload.KKTP || 70);
   const obj = {
     ID: generateId("PNL"),
     Jenis: payload.Jenis,
@@ -2411,7 +2451,8 @@ function apiSavePenilaian(payload) {
     Tanggal: payload.Tanggal,
     Judul: payload.Judul,
     TP_Terkait_JSON: JSON.stringify(payload.TP_Terkait || []),
-    KKTP: payload.KKTP || 70,
+    Jenis_Nilai: jenisNilai,
+    KKTP: kktp,
     Semester: payload.Semester,
     Tahun_Ajaran: payload.Tahun_Ajaran,
     CreatedAt: new Date()
@@ -2438,6 +2479,7 @@ function apiGetPenilaianList(payload) {
       Tanggal: p.Tanggal,
       Judul: p.Judul,
       TP_Terkait: safeParseJson(p.TP_Terkait_JSON),
+      Jenis_Nilai: p.Jenis_Nilai || "Angka",
       KKTP: p.KKTP,
       Semester: p.Semester,
       Tahun_Ajaran: p.Tahun_Ajaran,
@@ -2457,6 +2499,8 @@ function apiDeletePenilaian(payload) {
 
 // payload: { ID_Penilaian, Kelas } -> nilai seluruh siswa satu kelas untuk satu
 // kegiatan penilaian (siswa yang belum dinilai tetap muncul dengan Nilai null).
+// Nilai dikembalikan APA ADANYA (angka atau teks kriteria), tidak dipaksa Number(),
+// supaya mendukung kedua Jenis_Nilai.
 function apiGetNilaiPenilaian(payload) {
   const siswaKelas = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
     return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
@@ -2464,12 +2508,13 @@ function apiGetNilaiPenilaian(payload) {
   const nilaiTerkait = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Penilaian === payload.ID_Penilaian; });
   return siswaKelas.map(function (s) {
     const n = nilaiTerkait.find(function (x) { return x.ID_Siswa === s.ID; });
-    return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Nilai: n ? Number(n.Nilai) : null };
+    return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Nilai: n ? n.Nilai : null };
   });
 }
 
 // payload: { ID_Penilaian, Kelas, Nilai: [{ID_Siswa,Nama_Siswa,Nilai}] } -> menimpa
-// (overwrite) seluruh nilai kegiatan penilaian tsb sesuai isian guru saat itu.
+// (overwrite) seluruh nilai kegiatan penilaian tsb sesuai isian guru saat itu. Nilai
+// disimpan APA ADANYA (angka ATAU salah satu teks KRITERIA_PENILAIAN).
 function apiSaveNilaiSiswaBulk(payload) {
   const existing = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA).filter(function (n) { return n.ID_Penilaian === payload.ID_Penilaian; });
   existing.forEach(function (n) { deleteRowByField(SHEET_NAMES.NILAI_SISWA, "ID", n.ID); });
@@ -2481,7 +2526,7 @@ function apiSaveNilaiSiswaBulk(payload) {
       ID_Siswa: item.ID_Siswa,
       Nama_Siswa: item.Nama_Siswa,
       Kelas: payload.Kelas,
-      Nilai: Number(item.Nilai),
+      Nilai: item.Nilai,
       CreatedAt: new Date()
     });
   });
@@ -2489,8 +2534,9 @@ function apiSaveNilaiSiswaBulk(payload) {
 }
 
 // payload: { Kelas, Mapel, Jenis } -> rekap pivot: setiap siswa x setiap kegiatan
-// penilaian (kolom), lengkap rata-rata keseluruhan. Dipakai guru untuk melihat/
-// mencetak rekap nilai satu kelas sekaligus.
+// penilaian (kolom), lengkap rata-rata keseluruhan (HANYA dari kolom bertipe Angka;
+// kolom Kriteria ditampilkan apa adanya tanpa ikut dirata-rata). Dipakai guru untuk
+// melihat/mencetak rekap nilai satu kelas sekaligus.
 function apiGetRekapNilaiMapel(payload) {
   const siswaKelas = readSheetAsObjects(SHEET_NAMES.USERS).filter(function (u) {
     return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu === payload.Kelas;
@@ -2501,14 +2547,17 @@ function apiGetRekapNilaiMapel(payload) {
   daftarPenilaian.sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
   const semuaNilai = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA);
 
-  const kolom = daftarPenilaian.map(function (p) { return { ID: p.ID, Judul: p.Judul, Tanggal: p.Tanggal, KKTP: p.KKTP }; });
+  const kolom = daftarPenilaian.map(function (p) { return { ID: p.ID, Judul: p.Judul, Tanggal: p.Tanggal, KKTP: p.KKTP, Jenis_Nilai: p.Jenis_Nilai || "Angka" }; });
   const baris = siswaKelas.map(function (s) {
     const nilaiPerKolom = kolom.map(function (k) {
       const n = semuaNilai.find(function (x) { return x.ID_Penilaian === k.ID && x.ID_Siswa === s.ID; });
-      return n ? Number(n.Nilai) : null;
+      return n ? n.Nilai : null;
     });
-    const terisi = nilaiPerKolom.filter(function (v) { return v !== null; });
-    const rataRata = terisi.length ? Math.round(terisi.reduce(function (a, b) { return a + b; }, 0) / terisi.length * 10) / 10 : null;
+    const terisiAngka = kolom
+      .map(function (k, i) { return k.Jenis_Nilai === "Angka" ? nilaiPerKolom[i] : null; })
+      .filter(function (v) { return v !== null; })
+      .map(Number);
+    const rataRata = terisiAngka.length ? Math.round(terisiAngka.reduce(function (a, b) { return a + b; }, 0) / terisiAngka.length * 10) / 10 : null;
     return { ID_Siswa: s.ID, Nama_Siswa: s.Nama, Nilai: nilaiPerKolom, RataRata: rataRata };
   });
   return { Kolom: kolom, Baris: baris };
@@ -2521,9 +2570,13 @@ function apiGetNilaiSiswaSendiri(payload) {
   return nilaiSiswa.map(function (n) {
     const p = semuaPenilaian.find(function (x) { return x.ID === n.ID_Penilaian; });
     if (!p) return null;
+    const jenisNilai = p.Jenis_Nilai || "Angka";
+    const tuntas = jenisNilai === "Kriteria"
+      ? ordinalKriteria(n.Nilai) >= ordinalKriteria(p.KKTP)
+      : Number(n.Nilai) >= Number(p.KKTP);
     return {
       Mapel: p.Mapel, Jenis: p.Jenis, Judul: p.Judul, Tanggal: p.Tanggal,
-      Nilai: Number(n.Nilai), KKTP: p.KKTP, Tuntas: Number(n.Nilai) >= Number(p.KKTP)
+      Jenis_Nilai: jenisNilai, Nilai: n.Nilai, KKTP: p.KKTP, Tuntas: tuntas
     };
   }).filter(Boolean).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
