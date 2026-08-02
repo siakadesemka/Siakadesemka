@@ -1182,8 +1182,8 @@ function apiGetRekapKehadiranPkl(payload) {
       Tempat_PKL: siswa.Tempat_PKL,
       Guru_Pembimbing_PKL: siswa.Guru_Pembimbing_PKL,
       Jumlah_Hadir: riwayat.filter(function (r) { return r.Status === "Hadir"; }).length,
-      Jumlah_Jurnal_Terisi: riwayat.length,
-      Detail_Harian: riwayat.map(function (r) { return { Tanggal: r.Tanggal, Jam: r.Jam, Status: r.Status }; })
+      Jumlah_Jurnal_Terisi: riwayat.filter(function (r) { return String(r.Kegiatan_PKL || "").trim(); }).length,
+      Detail_Harian: riwayat.map(function (r) { return { Tanggal: r.Tanggal, Jam: r.Jam, Status: r.Status, Kegiatan_PKL: r.Kegiatan_PKL }; })
     };
   });
 

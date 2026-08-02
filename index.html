@@ -6189,30 +6189,30 @@ function KartuSiswa({
     className: "rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-white relative flex flex-col mx-auto",
     style: UKURAN_KARTU_STYLE
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-primary-700 via-primary-800 to-primary-900 text-white px-2.5 py-1.5 flex items-center gap-1.5 relative overflow-hidden shrink-0"
+    className: "bg-gradient-to-r from-primary-700 via-primary-800 to-primary-900 text-white px-2.5 py-1 flex items-center gap-1.5 relative overflow-hidden shrink-0"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "absolute -right-6 -top-6 w-20 h-20 rounded-full bg-white/10"
+    className: "absolute -right-6 -top-6 w-16 h-16 rounded-full bg-white/10"
   }), /*#__PURE__*/React.createElement("img", {
     src: "icons/logo.png",
     alt: "Logo Sekolah",
-    className: "w-6 h-6 object-contain shrink-0 relative"
+    className: "w-5 h-5 object-contain shrink-0 relative"
   }), /*#__PURE__*/React.createElement("div", {
     className: "relative leading-none"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "text-[11px] font-bold leading-tight tracking-wide"
+    className: "text-[10px] font-bold leading-tight tracking-wide"
   }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[8px] text-primary-100 tracking-widest mt-0.5"
+    className: "text-[7px] text-primary-100 tracking-widest"
   }, "KARTU TANDA PELAJAR"))), /*#__PURE__*/React.createElement("div", {
-    className: "px-2.5 py-1.5 flex gap-2 flex-1 min-h-0"
+    className: "px-2.5 py-1 flex gap-2 flex-1 min-h-0 overflow-hidden"
   }, /*#__PURE__*/React.createElement(FotoOrang, {
     nama: user.Nama,
     fotoUrlDrive: user.Foto_URL,
-    className: "w-14 h-[4.6rem] rounded border shrink-0",
-    iconClassName: "text-xl"
+    className: "w-12 h-16 rounded border shrink-0",
+    iconClassName: "text-lg"
   }), /*#__PURE__*/React.createElement("table", {
-    className: "text-[9px] w-full leading-tight"
+    className: "text-[8px] w-full leading-[1.35]"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-1 align-top w-12"
+    className: "text-gray-400 pr-1 align-top w-11"
   }, "Nama"), /*#__PURE__*/React.createElement("td", {
     className: "font-semibold"
   }, user.Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -6223,25 +6223,21 @@ function KartuSiswa({
     className: "text-gray-400 pr-1 align-top"
   }, "Kelas"), /*#__PURE__*/React.createElement("td", null, user.Kelas_Diampu)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     className: "text-gray-400 pr-1 align-top"
-  }, "Komp."), /*#__PURE__*/React.createElement("td", null, kompetensi)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-1 align-top"
-  }, "Alamat"), /*#__PURE__*/React.createElement("td", {
-    className: "leading-tight"
-  }, user.Alamat_Siswa || "-"))))), /*#__PURE__*/React.createElement("div", {
-    className: "px-2.5 pb-1.5 flex items-center justify-between gap-2 border-t pt-1.5 shrink-0"
+  }, "Komp."), /*#__PURE__*/React.createElement("td", null, kompetensi))))), /*#__PURE__*/React.createElement("div", {
+    className: "px-2.5 pb-1 flex items-center justify-between gap-2 border-t pt-1 shrink-0"
   }, /*#__PURE__*/React.createElement(InlineQrCode, {
     idSiswa: user.ID,
-    size: 82
+    size: 66
   }), /*#__PURE__*/React.createElement("div", {
-    className: "text-center text-[8px] leading-tight"
+    className: "text-center text-[7px] leading-tight"
   }, /*#__PURE__*/React.createElement("p", {
     className: "text-gray-400"
   }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
-    className: "font-semibold mt-3 border-t pt-0.5"
+    className: "font-semibold mt-2 border-t pt-0.5"
   }, namaKepsek || NAMA_KEPALA_SEKOLAH), /*#__PURE__*/React.createElement("p", {
     className: "text-gray-400"
   }, "NIP. ", nipKepsek || NIP_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
-    className: "h-1.5 bg-gradient-to-r from-accent via-primary-600 to-primary-900 shrink-0"
+    className: "h-1 bg-gradient-to-r from-accent via-primary-600 to-primary-900 shrink-0"
   }));
 }
 
@@ -6255,30 +6251,30 @@ function KartuPerpustakaan({
     className: "rounded-xl overflow-hidden shadow-lg border border-gray-200 bg-white relative flex flex-col mx-auto",
     style: UKURAN_KARTU_STYLE
   }, /*#__PURE__*/React.createElement("div", {
-    className: "bg-gradient-to-r from-secondary-600 via-emerald-700 to-emerald-800 text-white px-2.5 py-1.5 flex items-center gap-1.5 relative overflow-hidden shrink-0"
+    className: "bg-gradient-to-r from-secondary-600 via-emerald-700 to-emerald-800 text-white px-2.5 py-1 flex items-center gap-1.5 relative overflow-hidden shrink-0"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "absolute -right-6 -top-6 w-20 h-20 rounded-full bg-white/10"
+    className: "absolute -right-6 -top-6 w-16 h-16 rounded-full bg-white/10"
   }), /*#__PURE__*/React.createElement("img", {
     src: "icons/logo.png",
     alt: "Logo Sekolah",
-    className: "w-6 h-6 object-contain shrink-0 relative"
+    className: "w-5 h-5 object-contain shrink-0 relative"
   }), /*#__PURE__*/React.createElement("div", {
     className: "relative leading-none"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "text-[10px] font-bold leading-tight"
+    className: "text-[9px] font-bold leading-tight"
   }, "PERPUSTAKAAN SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
-    className: "text-[8px] text-emerald-100 tracking-widest mt-0.5"
+    className: "text-[7px] text-emerald-100 tracking-widest"
   }, "KARTU ANGGOTA PERPUSTAKAAN"))), /*#__PURE__*/React.createElement("div", {
-    className: "px-2.5 py-1.5 flex gap-2 flex-1 min-h-0"
+    className: "px-2.5 py-1 flex gap-2 flex-1 min-h-0 overflow-hidden"
   }, /*#__PURE__*/React.createElement(FotoOrang, {
     nama: user.Nama,
     fotoUrlDrive: user.Foto_URL,
-    className: "w-14 h-[4.6rem] rounded border shrink-0",
-    iconClassName: "text-xl"
+    className: "w-12 h-16 rounded border shrink-0",
+    iconClassName: "text-lg"
   }), /*#__PURE__*/React.createElement("table", {
-    className: "text-[9px] w-full leading-tight"
+    className: "text-[8px] w-full leading-[1.35]"
   }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    className: "text-gray-400 pr-1 align-top w-12"
+    className: "text-gray-400 pr-1 align-top w-11"
   }, "Nama"), /*#__PURE__*/React.createElement("td", {
     className: "font-semibold"
   }, user.Nama)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -6290,20 +6286,20 @@ function KartuPerpustakaan({
   }, "Status"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement(Badge, {
     color: "green"
   }, "Anggota Aktif")))))), /*#__PURE__*/React.createElement("div", {
-    className: "px-2.5 pb-1.5 flex items-center justify-between gap-2 border-t pt-1.5 shrink-0"
+    className: "px-2.5 pb-1 flex items-center justify-between gap-2 border-t pt-1 shrink-0"
   }, /*#__PURE__*/React.createElement(InlineQrCode, {
     idSiswa: user.ID,
-    size: 82
+    size: 66
   }), /*#__PURE__*/React.createElement("div", {
-    className: "text-center text-[8px] leading-tight"
+    className: "text-center text-[7px] leading-tight"
   }, /*#__PURE__*/React.createElement("p", {
     className: "text-gray-400"
   }, "Kepala Sekolah"), /*#__PURE__*/React.createElement("p", {
-    className: "font-semibold mt-3 border-t pt-0.5"
+    className: "font-semibold mt-2 border-t pt-0.5"
   }, namaKepsek || NAMA_KEPALA_SEKOLAH), /*#__PURE__*/React.createElement("p", {
     className: "text-gray-400"
   }, "NIP. ", nipKepsek || NIP_KEPALA_SEKOLAH))), /*#__PURE__*/React.createElement("div", {
-    className: "h-1.5 bg-gradient-to-r from-emerald-400 via-secondary-600 to-emerald-800 shrink-0"
+    className: "h-1 bg-gradient-to-r from-emerald-400 via-secondary-600 to-emerald-800 shrink-0"
   }));
 }
 function SiswaHomeModule() {
@@ -6745,7 +6741,7 @@ function SiswaPklHomeModule() {
     idSiswa: user.ID,
     size: 140
   }))), /*#__PURE__*/React.createElement(Card, {
-    title: "Absen PKL (Validasi GPS radius 30m)",
+    title: "Absen PKL (Validasi GPS radius 100m)",
     className: "md:col-span-2"
   }, locError && /*#__PURE__*/React.createElement(Alert, null, locError), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
