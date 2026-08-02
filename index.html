@@ -4188,7 +4188,7 @@ function AdminHariLiburTab() {
     }))
   }, /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-500 mb-3 bg-blue-50 border border-blue-100 rounded-lg p-2"
-  }, "Total ", getJumlahHariBulan(bulan, tahun), " hari di bulan ini, dengan ", list.length, " hari libur khusus terdaftar (di luar Sabtu/Minggu). Pastikan semua tanggal merah nasional & agenda sekolah bulan ini sudah lengkap di sini SEBELUM mencetak rekap bulanan, supaya rekap kehadiran tidak keliru menganggap hari libur sebagai hari efektif."), /*#__PURE__*/React.createElement("div", {
+  }, "Total ", getJumlahHariBulan(bulan, tahun), " hari di bulan ini, dengan ", list.length, " hari libur khusus terdaftar (di luar Minggu). Sekolah ini masuk 6 hari (Senin-Sabtu) - Sabtu TIDAK otomatis dianggap libur, jadi kalau ada Sabtu yang libur (mis. libur nasional), tambahkan tanggalnya di sini. Pastikan semua tanggal merah nasional & agenda sekolah bulan ini sudah lengkap SEBELUM mencetak rekap bulanan, supaya rekap kehadiran tidak keliru."), /*#__PURE__*/React.createElement("div", {
     className: "divide-y max-h-96 overflow-y-auto"
   }, list.map(l => /*#__PURE__*/React.createElement("div", {
     key: l.ID,

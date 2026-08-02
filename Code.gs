@@ -1969,9 +1969,13 @@ function getJumlahHariDalamBulan(bulan, tahun) {
 }
 
 // true jika tanggal tsb Sabtu/Minggu ATAU ada di daftar Hari_Libur
+// Menentukan apakah sebuah tanggal adalah hari libur. Sekolah ini masuk 6 hari
+// (Senin-Sabtu), jadi HANYA hari Minggu yang otomatis libur - Sabtu TETAP dianggap
+// hari efektif/masuk kecuali memang didaftarkan sebagai hari libur oleh Admin
+// (mis. libur nasional/semester yang kebetulan jatuh di hari Sabtu).
 function isHariLibur(dateObj, liburSet) {
   const day = dateObj.getDay(); // 0=Minggu, 6=Sabtu
-  if (day === 0 || day === 6) return true;
+  if (day === 0) return true;
   const key = Utilities.formatDate(dateObj, CONFIG.TIMEZONE, "yyyy-MM-dd");
   return liburSet.indexOf(key) !== -1;
 }
