@@ -3455,6 +3455,18 @@ function AdminGuruTab() {
     onClick: save
   }, "Simpan"))));
 }
+// Sama persis logikanya dengan parseNamaGuruList() di backend (Code.gs): nama guru
+// biasa mengandung koma pada gelarnya (mis. "JAMALI, S. Pd"), jadi field multi-guru
+// pembimbing PKL dipisah dengan " | " (BUKAN koma) supaya tidak salah terpecah.
+function parseNamaGuruListJs(str) {
+  const s = String(str || "").trim();
+  if (!s) return [];
+  if (s.indexOf(" | ") !== -1) {
+    return s.split(" | ").map(x => x.trim()).filter(Boolean);
+  }
+  return [s];
+}
+
 function AdminSiswaTab() {
   const [list, setList] = useState([]);
   const [guruList, setGuruList] = useState([]);
@@ -3546,7 +3558,7 @@ function AdminSiswaTab() {
     fotoUrlDrive: u.Foto_URL,
     className: "w-8 h-8 rounded-full shrink-0",
     iconClassName: "text-sm"
-  }), u.Nama)), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama), /*#__PURE__*/React.createElement("td", null, String(u.Kelas_Diampu || "").indexOf("XII") !== -1 ? u.Guru_Pembimbing_PKL || "-" : "-"), /*#__PURE__*/React.createElement("td", {
+  }), u.Nama)), /*#__PURE__*/React.createElement("td", null, u.Identitas_NIP_NISN), /*#__PURE__*/React.createElement("td", null, u.Kelas_Diampu), /*#__PURE__*/React.createElement("td", null, u.Guru_Wali_Nama), /*#__PURE__*/React.createElement("td", null, String(u.Kelas_Diampu || "").indexOf("XII") !== -1 ? parseNamaGuruListJs(u.Guru_Pembimbing_PKL).join(", ") || "-" : "-"), /*#__PURE__*/React.createElement("td", {
     className: "space-x-1"
   }, /*#__PURE__*/React.createElement(Button, {
     variant: "outline",
@@ -3650,16 +3662,16 @@ function AdminSiswaTab() {
   }, "Guru Pembimbing PKL (khusus kelas XII, boleh pilih lebih dari satu guru)"), /*#__PURE__*/React.createElement("div", {
     className: "flex flex-wrap gap-2"
   }, guruList.map(g => {
-    const terpilih = (editing.Guru_Pembimbing_PKL || "").split(",").map(s => s.trim()).filter(Boolean).includes(g.Nama);
+    const terpilih = parseNamaGuruListJs(editing.Guru_Pembimbing_PKL).includes(g.Nama);
     return /*#__PURE__*/React.createElement("button", {
       key: g.ID,
       type: "button",
       onClick: () => {
-        const arr = (editing.Guru_Pembimbing_PKL || "").split(",").map(s => s.trim()).filter(Boolean);
+        const arr = parseNamaGuruListJs(editing.Guru_Pembimbing_PKL);
         const next = terpilih ? arr.filter(n => n !== g.Nama) : [...arr, g.Nama];
         setEditing({
           ...editing,
-          Guru_Pembimbing_PKL: next.join(", ")
+          Guru_Pembimbing_PKL: next.join(" | ")
         });
       },
       className: classNames("px-3 py-1 rounded-full text-xs border", terpilih ? "bg-accent text-white border-accent" : "border-gray-300 text-gray-600")

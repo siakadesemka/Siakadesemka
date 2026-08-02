@@ -86,8 +86,23 @@ function cariPelanggaranByKode(kode) {
 // Guru_Pembimbing_PKL disimpan sebagai teks dipisah koma (mendukung lebih dari
 // satu guru pembimbing untuk satu siswa PKL). Helper ini mem-parsing jadi array
 // nama yang sudah di-trim, membuang entri kosong.
+// Memecah daftar BEBERAPA nama guru pembimbing PKL (field Guru_Pembimbing_PKL).
+// PENTING: nama guru di sekolah ini biasa mengandung koma pada gelarnya sendiri
+// (mis. "JAMALI, S. Pd"), jadi field multi-guru TIDAK BISA dipisah pakai koma biasa
+// (akan salah memecah "JAMALI, S. Pd" jadi dua: "JAMALI" dan "S. Pd"). Karena itu,
+// saat menyimpan lebih dari satu pembimbing, dipisah dengan " | " (lihat frontend
+// PilihGuruPembimbingPkl). Untuk data LAMA yang terlanjur tersimpan dipisah koma
+// biasa: kalau tidak ada tanda " | " sama sekali, seluruh teks dianggap SATU nama
+// utuh (ini benar untuk kasus 1 pembimbing, yang paling umum). Kalau memang ada
+// lebih dari satu pembimbing tersimpan format lama, Admin perlu membuka & simpan
+// ulang data siswa tsb sekali saja supaya otomatis berpindah ke format baru.
 function parseNamaGuruList(str) {
-  return String(str || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+  const s = String(str || "").trim();
+  if (!s) return [];
+  if (s.indexOf(" | ") !== -1) {
+    return s.split(" | ").map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  return [s];
 }
 
 const SHEET_NAMES = {
