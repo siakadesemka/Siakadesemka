@@ -108,7 +108,7 @@ const {
    Ganti API_URL dengan URL Web App hasil deploy Google Apps Script Anda.
    Contoh: https://script.google.com/macros/s/AKfycb..../exec
    ============================================================================ */
-const API_URL = "https://script.google.com/macros/s/AKfycbydDQgw-joZ_6MlKSDQSLtO-RvaXjBP059wwD0_VmwP2jmhB20TBRLugsLqWj8D5xIUyg/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyuUYV-hWilylQiHOOwspFL4PNv7rfXxZC6XZKO7mphswwb9FTZ_4jcBVHA8tsjgIlvjg/exec";
 async function apiCall(action, payload = {}) {
   if (API_URL.indexOf("GANTI_DENGAN") !== -1) {
     throw new Error("API_URL belum diatur. Silakan isi URL Web App Google Apps Script pada index.html.");
@@ -6753,7 +6753,7 @@ function SiswaPklHomeModule() {
     idSiswa: user.ID,
     size: 140
   }))), /*#__PURE__*/React.createElement(Card, {
-    title: "Absen PKL (Validasi GPS radius 30m)",
+    title: "Absen PKL (Validasi GPS radius 100m)",
     className: "md:col-span-2"
   }, locError && /*#__PURE__*/React.createElement(Alert, null, locError), msg && /*#__PURE__*/React.createElement(Alert, {
     type: "success"
