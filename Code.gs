@@ -2327,7 +2327,17 @@ function apiTeruskanPesanPiket(payload) {
     CreatedAt: new Date()
   };
   appendRowFromObject(SHEET_NAMES.KEHADIRAN_MENGAJAR_GURU, obj);
-  return { status: "Pesan diteruskan ke akun " + payload.Nama_Guru + ", menunggu guru mengisi keterangan." };
+
+  // Selain notifikasi di akun SIAKAD guru ybs, teruskan juga ke WA guru tsb (kalau
+  // nomor HP-nya sudah terisi di Users_Master) supaya guru langsung tahu meski
+  // belum sempat buka aplikasi.
+  const guru = readSheetAsObjects(SHEET_NAMES.USERS).find(function (u) { return u.ID === payload.ID_Guru; });
+  if (guru && guru.No_HP) {
+    const pesan = "Pemberitahuan SIAKAD ESEMKASA:\nPiket (" + payload.Nama_Piket + ") menanyakan kehadiran mengajar Bapak/Ibu pada jam ke " + payload.Jam_Ke + ", kelas " + payload.Kelas + ", mapel " + payload.Mapel + ", tanggal " + formatTanggalPanjangIndo(payload.Tanggal) + ", karena belum ada Jurnal Mengajar yang tercatat.\nSilakan buka akun SIAKAD Bapak/Ibu untuk mengisi jurnal atau memberi keterangan.";
+    kirimWA(guru.No_HP, pesan);
+  }
+
+  return { status: "Pesan diteruskan ke akun " + payload.Nama_Guru + " (dan WA jika nomor HP-nya tersedia), menunggu guru mengisi keterangan." };
 }
 
 // payload: { ID_Guru, Nama_Guru, Kelas, Mapel, Jam_Ke, Tanggal, Hari, Status, Keterangan,
