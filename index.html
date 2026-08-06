@@ -769,6 +769,7 @@ const MENU_GROUPS = {
   guru_piket: "Pembinaan & Kedisiplinan", wali_poin: "Pembinaan & Kedisiplinan", siswa_poin: "Pembinaan & Kedisiplinan", waka_kesiswaan_poin: "Pembinaan & Kedisiplinan",
   guru_pkl_monitoring: "Monitoring PKL", kepsek_pkl_monitoring: "Monitoring PKL", waka_kurikulum_pkl_monitoring: "Monitoring PKL", waka_hubmi_pkl: "Monitoring PKL", kakomli_pkl: "Monitoring PKL",
   kepsek_rekap_kehadiran_kelas: "Laporan & Rekap", waka_kurikulum_rekap_kehadiran_kelas: "Laporan & Rekap", waka_kurikulum_rekap_guru_mengajar: "Laporan & Rekap",
+  waka_kurikulum_portofolio_siswa: "Laporan & Rekap",
   waka_kesiswaan_rekap_kelas: "Laporan & Rekap", kepsek_data_guru: "Laporan & Rekap", kepsek_data_siswa: "Laporan & Rekap",
   pengawas_7kaih: "Laporan & Rekap", pengawas_data_guru: "Laporan & Rekap", pengawas_data_siswa: "Laporan & Rekap", kakomli_siswa: "Laporan & Rekap"
 };
@@ -948,6 +949,10 @@ const ROLE_MENU = {
     key: "waka_kurikulum_rekap_guru_mengajar",
     label: "Rekap Kehadiran Mengajar Guru",
     icon: "🔔"
+  }, {
+    key: "waka_kurikulum_portofolio_siswa",
+    label: "Portofolio Siswa",
+    icon: "🗂️"
   }],
   "Pengawas Sekolah": [{
     key: "pengawas_7kaih",
@@ -1317,6 +1322,7 @@ function PageRouter({
     waka_kurikulum_pkl_monitoring: WakaHubmiPklModule,
     waka_kurikulum_rekap_kehadiran_kelas: RekapKehadiranPerKelasModule,
     waka_kurikulum_rekap_guru_mengajar: WakaKurikulumRekapMengajarModule,
+    waka_kurikulum_portofolio_siswa: WakaKurikulumPortofolioModule,
     pengawas_7kaih: WakaKesiswaan7KaihModule,
     pengawas_jurnal_guru: PengawasMonitorJurnalGuruModule,
     pengawas_data_guru: PengawasDataGuruModule,
@@ -2856,6 +2862,7 @@ function JurnalBimbinganModule() {
     Kegiatan: ""
   });
   const [riwayat, setRiwayat] = useState([]);
+  const [foto, setFoto] = useState(null);
   const [msg, setMsg] = useState(null);
   const [error, setError] = useState("");
   const [selectedCetak, setSelectedCetak] = useState(null);
@@ -2920,7 +2927,8 @@ function JurnalBimbinganModule() {
         ...form,
         ID_Guru: user.ID,
         Nama_Guru: user.Nama,
-        Nama_Siswa: siswa?.Nama || ""
+        Nama_Siswa: siswa?.Nama || "",
+        Foto_Base64: foto
       });
       setMsg("Jurnal bimbingan tersimpan.");
       showAcehGreeting();
@@ -2930,6 +2938,7 @@ function JurnalBimbinganModule() {
         Aspek_Layanan: "",
         Kegiatan: ""
       });
+      setFoto(null);
       apiCall("getJurnalBimbinganByGuru", {
         ID_Guru: user.ID
       }).then(setRiwayat);
@@ -2972,6 +2981,10 @@ function JurnalBimbinganModule() {
     value: form.Kegiatan,
     onChange: e => set("Kegiatan", e.target.value),
     required: true
+  }), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm font-medium text-gray-600 mt-2 mb-1"
+  }, "Dokumentasi Foto Bimbingan (opsional)"), /*#__PURE__*/React.createElement(CameraCapture, {
+    onCapture: setFoto
   }), /*#__PURE__*/React.createElement(Button, {
     type: "submit"
   }, "Simpan"))), /*#__PURE__*/React.createElement(Card, {
@@ -3015,7 +3028,9 @@ function JurnalBimbinganModule() {
     }
   }, "🖨️ Cetak")), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement(Badge, {
     color: "indigo"
-  }, r.Aspek_Layanan)), /*#__PURE__*/React.createElement("p", {
+  }, r.Aspek_Layanan), r.Foto_URL && /*#__PURE__*/React.createElement(Badge, {
+    color: "green"
+  }, "📷 Ada Foto")), /*#__PURE__*/React.createElement("p", {
     className: "text-gray-600 mt-1"
   }, r.Kegiatan)))))), riwayatPerBulan.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-center text-gray-400 py-6"
@@ -3047,7 +3062,14 @@ function JurnalBimbinganModule() {
     className: "font-medium"
   }, "Kegiatan yang Dilakukan:"), /*#__PURE__*/React.createElement("p", {
     className: "mb-3"
-  }, selectedCetak.Kegiatan), /*#__PURE__*/React.createElement(TandaTanganCetak, {
+  }, selectedCetak.Kegiatan), selectedCetak.Foto_URL && /*#__PURE__*/React.createElement("div", {
+    className: "mb-3"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium mb-1"
+  }, "Dokumentasi Foto:"), /*#__PURE__*/React.createElement("img", {
+    src: urlFotoAman(selectedCetak.Foto_URL),
+    className: "w-48 rounded border"
+  })), /*#__PURE__*/React.createElement(TandaTanganCetak, {
     tanggal: formatTanggalIndo(selectedCetak.Tanggal),
     jabatanKanan: "Wali Kelas / Guru Wali",
     namaKanan: user.Nama,
@@ -3061,9 +3083,12 @@ function JurnalBimbinganModule() {
     className: "text-center text-sm mb-4"
   }, "SMK NEGERI 1 WOYLA · ", user.Nama), /*#__PURE__*/React.createElement("table", {
     className: "w-full text-sm mb-4"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Aspek Capaian Layanan"), /*#__PURE__*/React.createElement("th", null, "Kegiatan"))), /*#__PURE__*/React.createElement("tbody", null, riwayat.slice().sort((a, b) => new Date(b.Tanggal) - new Date(a.Tanggal)).map((r, i) => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "No"), /*#__PURE__*/React.createElement("th", null, "Tanggal"), /*#__PURE__*/React.createElement("th", null, "Nama Siswa"), /*#__PURE__*/React.createElement("th", null, "Aspek Capaian Layanan"), /*#__PURE__*/React.createElement("th", null, "Kegiatan"), /*#__PURE__*/React.createElement("th", null, "Foto"))), /*#__PURE__*/React.createElement("tbody", null, riwayat.slice().sort((a, b) => new Date(b.Tanggal) - new Date(a.Tanggal)).map((r, i) => /*#__PURE__*/React.createElement("tr", {
     key: r.ID
-  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Aspek_Layanan), /*#__PURE__*/React.createElement("td", null, r.Kegiatan))))), riwayat.length === 0 && /*#__PURE__*/React.createElement("p", {
+  }, /*#__PURE__*/React.createElement("td", null, i + 1), /*#__PURE__*/React.createElement("td", null, formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement("td", null, r.Nama_Siswa), /*#__PURE__*/React.createElement("td", null, r.Aspek_Layanan), /*#__PURE__*/React.createElement("td", null, r.Kegiatan), /*#__PURE__*/React.createElement("td", null, r.Foto_URL ? /*#__PURE__*/React.createElement("img", {
+    src: urlFotoAman(r.Foto_URL),
+    className: "w-12 h-12 object-cover rounded border"
+  }) : "-"))))), riwayat.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "text-center text-gray-400 py-6"
   }, "Belum ada riwayat."), /*#__PURE__*/React.createElement(TandaTanganCetak, {
     tanggal: formatTanggalIndo(todayStr()),
@@ -5034,6 +5059,204 @@ function WakaKurikulumRekapMengajarModule() {
     )
   ));
 }
+// ============================================================================
+// MODUL WAKA KURIKULUM: PORTOFOLIO SISWA (rekam jejak lengkap per-siswa)
+// ============================================================================
+function BagianPortofolio({
+  judul,
+  jumlah,
+  children
+}) {
+  return /*#__PURE__*/React.createElement("details", {
+    className: "border rounded-xl bg-white overflow-hidden",
+    open: true
+  }, /*#__PURE__*/React.createElement("summary", {
+    className: "cursor-pointer select-none px-4 py-3 font-semibold text-gray-800 bg-gray-50 flex items-center justify-between"
+  }, judul, /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, jumlah)), /*#__PURE__*/React.createElement("div", {
+    className: "p-4"
+  }, children));
+}
+function WakaKurikulumPortofolioModule() {
+  const [daftarSiswa, setDaftarSiswa] = useState([]);
+  const [idSiswa, setIdSiswa] = useState("");
+  const [cari, setCari] = useState("");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    apiCall("getDaftarSiswaUntukPortofolio", {}).then(setDaftarSiswa).catch(e => setError(e.message));
+  }, []);
+  const hasilCari = useMemo(() => {
+    if (!cari.trim()) return [];
+    const q = cari.trim().toLowerCase();
+    return daftarSiswa.filter(s => s.Nama.toLowerCase().includes(q) || String(s.NISN || "").includes(q)).slice(0, 15);
+  }, [cari, daftarSiswa]);
+  async function pilihSiswa(s) {
+    setIdSiswa(s.ID);
+    setCari(s.Nama);
+    setData(null);
+    setError("");
+    setLoading(true);
+    try {
+      setData(await apiCall("getPortofolioSiswa", {
+        ID_Siswa: s.ID
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    title: "Cari Siswa",
+    className: "no-print"
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("input", {
+    value: cari,
+    onChange: e => {
+      setCari(e.target.value);
+      setIdSiswa("");
+    },
+    placeholder: "Ketik nama atau NISN siswa...",
+    className: "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+  }), !idSiswa && hasilCari.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "absolute z-10 bg-white border rounded-lg shadow-lg mt-1 w-full max-h-64 overflow-y-auto"
+  }, hasilCari.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.ID,
+    type: "button",
+    onClick: () => pilihSiswa(s),
+    className: "w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-0"
+  }, s.Nama, " ", /*#__PURE__*/React.createElement("span", {
+    className: "text-gray-400"
+  }, "· ", s.Kelas, " · ", s.NISN)))))), loading && /*#__PURE__*/React.createElement(Spinner, null), data && /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement(Card, {
+    actions: /*#__PURE__*/React.createElement(PrintButton, {
+      label: "Cetak Portofolio"
+    })
+  }, /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "flex flex-col sm:flex-row gap-4"
+  }, /*#__PURE__*/React.createElement(FotoOrang, {
+    nama: data.Profil.Nama,
+    fotoUrlDrive: data.Profil.Foto_URL,
+    className: "w-28 h-36 rounded-lg border shrink-0 mx-auto sm:mx-0",
+    iconClassName: "text-4xl"
+  }), /*#__PURE__*/React.createElement("table", {
+    className: "text-sm w-full"
+  }, /*#__PURE__*/React.createElement("tbody", null, [["Nama", data.Profil.Nama], ["NISN", data.Profil.NISN], ["Kelas Sekarang", data.Profil.Kelas_Sekarang], ["TTL", (data.Profil.Tempat_Lahir || "-") + ", " + (data.Profil.Tanggal_Lahir ? formatTanggalIndo(data.Profil.Tanggal_Lahir) : "-")], ["Alamat", data.Profil.Alamat_Siswa || "-"], ["Nama Ayah", data.Profil.Nama_Ayah || "-"], ["Nama Ibu", data.Profil.Nama_Ibu || "-"], ["No. HP Orang Tua", data.Profil.No_HP_OrangTua || "-"], ["Guru Wali", data.Profil.Guru_Wali_Nama || "-"], ["Tempat PKL", data.Profil.Tempat_PKL || "-"], ["Guru Pembimbing PKL", parseNamaGuruListJs(data.Profil.Guru_Pembimbing_PKL).join(", ") || "-"]].map(([label, val]) => /*#__PURE__*/React.createElement("tr", {
+    key: label
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "text-gray-400 pr-3 py-0.5 align-top w-40"
+  }, label), /*#__PURE__*/React.createElement("td", {
+    className: "py-0.5"
+  }, val))))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 content-start sm:w-48 shrink-0"
+  }, /*#__PURE__*/React.createElement(Badge, {
+    color: data.Ringkasan.Total_Poin_Pelanggaran > 0 ? "red" : "green"
+  }, "Poin: ", data.Ringkasan.Total_Poin_Pelanggaran), /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, "Hadir Gerbang: ", data.Ringkasan.Jumlah_Hadir_Gerbang, "/", data.Ringkasan.Jumlah_Hari_Tercatat_Gerbang), /*#__PURE__*/React.createElement(Badge, {
+    color: "green"
+  }, "7KAIH Sah: ", data.Ringkasan.Jumlah_7Kaih_Terverifikasi, "/", data.Ringkasan.Jumlah_7Kaih_Terisi), /*#__PURE__*/React.createElement(Badge, {
+    color: "amber"
+  }, "Bimbingan: ", data.Ringkasan.Jumlah_Bimbingan), /*#__PURE__*/React.createElement(Badge, {
+    color: "indigo"
+  }, "Hadir PKL: ", data.Ringkasan.Jumlah_Hadir_PKL)))), /*#__PURE__*/React.createElement("div", {
+    className: "no-print space-y-3"
+  }, /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "📅 Riwayat Kehadiran (Absen Gerbang)",
+    jumlah: data.Riwayat_Kehadiran.length
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto max-h-96 overflow-y-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "text-left text-gray-400 border-b sticky top-0 bg-white"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "py-1 pr-2"
+  }, "Tanggal"), /*#__PURE__*/React.createElement("th", {
+    className: "py-1 pr-2"
+  }, "Jam Masuk"), /*#__PURE__*/React.createElement("th", {
+    className: "py-1 pr-2"
+  }, "Jam Pulang"))), /*#__PURE__*/React.createElement("tbody", null, data.Riwayat_Kehadiran.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.ID,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-1 pr-2"
+  }, formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement("td", {
+    className: "py-1 pr-2"
+  }, r.Jam_Masuk || "-"), /*#__PURE__*/React.createElement("td", {
+    className: "py-1 pr-2"
+  }, r.Jam_Pulang || "-"))), data.Riwayat_Kehadiran.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: "3",
+    className: "text-center text-gray-400 py-4"
+  }, "Belum ada catatan kehadiran.")))))), /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "🎯 Riwayat 7KAIH",
+    jumlah: data.Riwayat_7Kaih.length
+  }, /*#__PURE__*/React.createElement(TabelJurnal7KaihLengkap, {
+    data: data.Riwayat_7Kaih,
+    showKelas: false
+  })), /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "💬 Riwayat Bimbingan",
+    jumlah: data.Riwayat_Bimbingan.length
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "divide-y text-sm"
+  }, data.Riwayat_Bimbingan.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-2"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, formatTanggalIndo(r.Tanggal), " · ", r.Aspek_Layanan), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-600"
+  }, r.Kegiatan), r.Foto_URL && /*#__PURE__*/React.createElement("img", {
+    src: urlFotoAman(r.Foto_URL),
+    className: "w-24 h-24 object-cover rounded border mt-1"
+  }))), data.Riwayat_Bimbingan.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-4"
+  }, "Belum ada catatan."))), /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "🏢 Riwayat PKL",
+    jumlah: data.Riwayat_PKL.length
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "divide-y text-sm max-h-80 overflow-y-auto"
+  }, data.Riwayat_PKL.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-2 flex justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, formatTanggalIndo(r.Tanggal), " · ", r.Jam || "-"), /*#__PURE__*/React.createElement(Badge, {
+    color: r.Status === "Hadir" ? "green" : "amber"
+  }, r.Status))), data.Riwayat_PKL.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-4"
+  }, "Belum ada catatan PKL."))), /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "🚨 Poin Pelanggaran & Tindak Lanjut",
+    jumlah: data.Riwayat_Poin_Pelanggaran.length
+  }, /*#__PURE__*/React.createElement(RiwayatPoinList, {
+    riwayat: data.Riwayat_Poin_Pelanggaran
+  }), data.Riwayat_Tindak_Lanjut.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 pt-3 border-t"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs font-semibold text-gray-500 mb-1"
+  }, "Riwayat Tindak Lanjut"), /*#__PURE__*/React.createElement(RiwayatTindakLanjutList, {
+    riwayat: data.Riwayat_Tindak_Lanjut
+  }))), /*#__PURE__*/React.createElement(BagianPortofolio, {
+    judul: "📊 Riwayat Nilai",
+    jumlah: data.Riwayat_Nilai.length
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "divide-y text-sm"
+  }, data.Riwayat_Nilai.map((n, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "py-2 flex justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, n.Mapel, " · ", n.Jenis, " · ", n.Judul), /*#__PURE__*/React.createElement("span", {
+    className: "font-medium"
+  }, n.Nilai))), data.Riwayat_Nilai.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-4"
+  }, "Belum ada nilai tercatat."))))));
+}
+
 function RiwayatPoinList({
   riwayat
 }) {
@@ -5285,6 +5508,243 @@ function ringkasMakan(menu, jam) {
 }
 
 // Tabel lengkap Jurnal 7KAIH, dipilah per 7 kebiasaan (dipakai bersama beberapa modul di bawah)
+// Definisi 7 kegiatan/kebiasaan (7 KAIH) beserta kolom yang relevan untuk cetak
+// laporan bulanan (satu lembar per kegiatan, memuat semua tanggal dalam sebulan).
+const DAFTAR_KEGIATAN_7KAIH = [{
+  key: "bangun_pagi",
+  judul: "1. Bangun Pagi",
+  kolom: [{
+    label: "Jam Bangun",
+    field: "Bangun_Pagi_Jam"
+  }]
+}, {
+  key: "ibadah",
+  judul: "2. Beribadah",
+  kolom: [{
+    label: "Subuh",
+    field: "Shalat_Subuh_Jam"
+  }, {
+    label: "Dzuhur",
+    field: "Shalat_Dzuhur_Jam"
+  }, {
+    label: "Ashar",
+    field: "Shalat_Ashar_Jam"
+  }, {
+    label: "Maghrib",
+    field: "Shalat_Maghrib_Jam"
+  }, {
+    label: "Isya",
+    field: "Shalat_Isya_Jam"
+  }]
+}, {
+  key: "olahraga",
+  judul: "3. Berolahraga",
+  kolom: [{
+    label: "Kegiatan Olahraga",
+    field: "Olahraga_Kegiatan"
+  }]
+}, {
+  key: "makan",
+  judul: "4. Makan Sehat & Bergizi",
+  kolom: [{
+    label: "Menu Pagi",
+    field: "Makan_Pagi_Menu"
+  }, {
+    label: "Jam Pagi",
+    field: "Makan_Pagi_Jam"
+  }, {
+    label: "Menu Siang",
+    field: "Makan_Siang_Menu"
+  }, {
+    label: "Jam Siang",
+    field: "Makan_Siang_Jam"
+  }, {
+    label: "Menu Malam",
+    field: "Makan_Malam_Menu"
+  }, {
+    label: "Jam Malam",
+    field: "Makan_Malam_Jam"
+  }]
+}, {
+  key: "belajar",
+  judul: "5. Gemar Belajar",
+  kolom: [{
+    label: "Kegiatan Belajar",
+    field: "Belajar_Kegiatan"
+  }]
+}, {
+  key: "bermasyarakat",
+  judul: "6. Bermasyarakat",
+  kolom: [{
+    label: "Kegiatan Bermasyarakat",
+    field: "Bermasyarakat_Kegiatan"
+  }]
+}, {
+  key: "tidur",
+  judul: "7. Tidur Cepat & Berkualitas",
+  kolom: [{
+    label: "Jam Tidur",
+    field: "Tidur_Jam"
+  }]
+}];
+
+// Panel verifikasi Jurnal 7KAIH - dipakai Guru Wali untuk mengesahkan entri
+// harian siswa bimbingannya satu per satu sebelum dianggap SAH.
+function Verifikasi7KaihPanel() {
+  const {
+    user
+  } = useAuth();
+  const [list, setList] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  function load() {
+    setLoading(true);
+    apiCall("getJurnal7KaihMenungguVerifikasi", {
+      ID_Guru: user.ID
+    }).then(setList).catch(e => setError(e.message)).finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+  async function verifikasi(id) {
+    try {
+      await apiCall("verifikasiJurnal7Kaih", {
+        ID: id,
+        ID_Guru: user.ID,
+        Nama_Guru: user.Nama
+      });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Menunggu Verifikasi (" + list.length + ")",
+    subtitle: "Sahkan jurnal harian 7KAIH siswa bimbingan Anda",
+    actions: /*#__PURE__*/React.createElement(Button, {
+      variant: "outline",
+      onClick: load
+    }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Muat Ulang")
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "divide-y max-h-96 overflow-y-auto"
+  }, list.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.ID,
+    className: "py-2 flex items-center justify-between gap-2 text-sm"
+  }, /*#__PURE__*/React.createElement("span", null, r.Nama_Siswa, " · ", formatTanggalIndo(r.Tanggal)), /*#__PURE__*/React.createElement(Button, {
+    variant: "secondary",
+    onClick: () => verifikasi(r.ID)
+  }, "✔ Verifikasi"))), list.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-gray-400 py-6"
+  }, "Tidak ada jurnal yang menunggu verifikasi.")));
+}
+
+// Panel cetak laporan bulanan 7KAIH - SATU LEMBAR PER KEGIATAN (7 lembar),
+// masing-masing memuat SEMUA tanggal dalam bulan terpilih (seperti rekap absensi).
+// Dipakai baik oleh Guru Wali (daftarSiswa = siswa bimbingannya) maupun Waka
+// Kesiswaan/Waka Kurikulum (daftarSiswa = seluruh siswa).
+function Cetak7KaihBulananPanel({
+  daftarSiswa
+}) {
+  const now = new Date();
+  const [idSiswa, setIdSiswa] = useState("");
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const siswaTerpilih = daftarSiswa.find(s => s.ID === idSiswa);
+  async function muat() {
+    if (!idSiswa) {
+      setError("Pilih siswa terlebih dahulu.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getJurnal7KaihBulanan", {
+        ID_Siswa: idSiswa,
+        Bulan: bulan,
+        Tahun: tahun
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Cetak Laporan Bulanan 7KAIH (per Kegiatan)",
+    subtitle: "Satu lembar per kegiatan, memuat seluruh tanggal dalam sebulan",
+    actions: data && /*#__PURE__*/React.createElement(PrintButton, {
+      label: "Cetak 7 Lembar",
+      landscape: true
+    })
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), /*#__PURE__*/React.createElement("div", {
+    className: "grid sm:grid-cols-4 gap-2 no-print items-end"
+  }, /*#__PURE__*/React.createElement(Select, {
+    label: "Siswa",
+    value: idSiswa,
+    onChange: e => setIdSiswa(e.target.value),
+    options: daftarSiswa.map(s => ({
+      value: s.ID,
+      label: s.Nama + (s.Kelas ? " (" + s.Kelas + ")" : "")
+    }))
+  }), /*#__PURE__*/React.createElement(Select, {
+    label: "Bulan",
+    value: bulan,
+    onChange: e => setBulan(Number(e.target.value)),
+    options: NAMA_BULAN.map((n, i) => ({
+      value: i + 1,
+      label: n
+    }))
+  }), /*#__PURE__*/React.createElement(Input, {
+    label: "Tahun",
+    type: "number",
+    value: tahun,
+    onChange: e => setTahun(Number(e.target.value))
+  }), /*#__PURE__*/React.createElement(Button, {
+    onClick: muat
+  }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Tampilkan")), data && /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "mt-4"
+  }, DAFTAR_KEGIATAN_7KAIH.map((kg, idx) => /*#__PURE__*/React.createElement("div", {
+    key: kg.key,
+    style: idx > 0 ? {
+      pageBreakBefore: "always"
+    } : {}
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "text-lg font-bold text-center mb-0.5"
+  }, "LAPORAN KEGIATAN 7 KAIH - ", kg.judul.toUpperCase()), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-1"
+  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("p", {
+    className: "text-center text-sm mb-4"
+  }, siswaTerpilih?.Nama, siswaTerpilih?.Kelas ? " · Kelas " + siswaTerpilih.Kelas : "", " · ", NAMA_BULAN[bulan - 1], " ", tahun), /*#__PURE__*/React.createElement("table", {
+    className: "w-full text-sm mb-6"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "border-b"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "text-left py-1"
+  }, "Tgl"), kg.kolom.map(k => /*#__PURE__*/React.createElement("th", {
+    key: k.field,
+    className: "text-left py-1"
+  }, k.label)), /*#__PURE__*/React.createElement("th", {
+    className: "text-left py-1"
+  }, "Status"))), /*#__PURE__*/React.createElement("tbody", null, data.map(row => /*#__PURE__*/React.createElement("tr", {
+    key: row.Tanggal,
+    className: "border-b last:border-0"
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, new Date(row.Tanggal).getDate()), kg.kolom.map(k => /*#__PURE__*/React.createElement("td", {
+    key: k.field,
+    className: "py-1"
+  }, row[k.field] || "-")), /*#__PURE__*/React.createElement("td", {
+    className: "py-1"
+  }, !row.Ada_Data ? "-" : row.Status_Verifikasi === "Terverifikasi" ? "Sah" : "Menunggu"))))), idx === DAFTAR_KEGIATAN_7KAIH.length - 1 && /*#__PURE__*/React.createElement(TandaTanganCetak, {
+    tanggal: formatTanggalIndo(todayStr()),
+    jabatanKanan: "Wali Kelas / Guru Wali",
+    namaKanan: siswaTerpilih?.Guru_Wali_Nama || "",
+    nipKanan: ""
+  })))));
+}
+
 function TabelJurnal7KaihLengkap({
   data,
   showKelas = true
@@ -5301,7 +5761,9 @@ function TabelJurnal7KaihLengkap({
     className: "pr-2"
   }, "Nama Siswa"), showKelas && /*#__PURE__*/React.createElement("th", {
     className: "pr-2"
-  }, "Kelas"), KOLOM_7KAIH.map(k => /*#__PURE__*/React.createElement("th", {
+  }, "Kelas"), /*#__PURE__*/React.createElement("th", {
+    className: "pr-2"
+  }, "Status"), KOLOM_7KAIH.map(k => /*#__PURE__*/React.createElement("th", {
     key: k.field,
     className: "pr-2"
   }, k.label)), /*#__PURE__*/React.createElement("th", {
@@ -5325,7 +5787,13 @@ function TabelJurnal7KaihLengkap({
     className: "pr-2"
   }, r.Nama_Siswa), showKelas && /*#__PURE__*/React.createElement("td", {
     className: "pr-2"
-  }, r.Kelas), KOLOM_7KAIH.map(k => /*#__PURE__*/React.createElement("td", {
+  }, r.Kelas), /*#__PURE__*/React.createElement("td", {
+    className: "pr-2"
+  }, r.Status_Verifikasi === "Terverifikasi" ? /*#__PURE__*/React.createElement(Badge, {
+    color: "green"
+  }, "✔ Sah") : /*#__PURE__*/React.createElement(Badge, {
+    color: "amber"
+  }, "Menunggu")), KOLOM_7KAIH.map(k => /*#__PURE__*/React.createElement("td", {
     key: k.field,
     className: "pr-2"
   }, r[k.field] || "-")), /*#__PURE__*/React.createElement("td", {
@@ -5341,7 +5809,7 @@ function TabelJurnal7KaihLengkap({
   }, r.Belajar_Kegiatan || "-"), /*#__PURE__*/React.createElement("td", {
     className: "pr-2 max-w-[10rem] truncate"
   }, r.Bermasyarakat_Kegiatan || "-"), /*#__PURE__*/React.createElement("td", null, r.Tidur_Jam || "-"))), data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: "16",
+    colSpan: "18",
     className: "text-center text-gray-400 py-6"
   }, "Tidak ada data.")))));
 }
@@ -5395,7 +5863,21 @@ function GuruWali7KaihModule() {
     load();
   }, []);
   const namaFile = "Jurnal_7KAIH_" + (user.Nama || "GuruWali").replace(/\s+/g, "_") + ".xlsx";
-  return /*#__PURE__*/React.createElement(Card, {
+  const [tab, setTab] = useState("tabel");
+  return /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 flex-wrap no-print"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "tabel" ? "primary" : "outline",
+    onClick: () => setTab("tabel")
+  }, "📋 Tabel"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "verifikasi" ? "primary" : "outline",
+    onClick: () => setTab("verifikasi")
+  }, "✔ Verifikasi"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "cetak" ? "primary" : "outline",
+    onClick: () => setTab("cetak")
+  }, "🖨️ Cetak Bulanan per Kegiatan")), tab === "tabel" && /*#__PURE__*/React.createElement(Card, {
     title: "Jurnal 7KAIH Siswa Bimbingan Saya",
     subtitle: data.Daftar_Siswa.length + " siswa wali",
     actions: /*#__PURE__*/React.createElement("div", {
@@ -5418,7 +5900,9 @@ function GuruWali7KaihModule() {
   }, "Guru Wali: ", data.Nama_Guru_Wali || user.Nama), /*#__PURE__*/React.createElement(TabelJurnal7KaihLengkap, {
     data: data.Jurnal,
     showKelas: true
-  })));
+  }))), tab === "verifikasi" && /*#__PURE__*/React.createElement(Verifikasi7KaihPanel, null), tab === "cetak" && /*#__PURE__*/React.createElement(Cetak7KaihBulananPanel, {
+    daftarSiswa: data.Daftar_Siswa
+  }));
 }
 
 // Jurnal 7KAIH seluruh siswa se-sekolah, dipakai bersama oleh Waka Kesiswaan,
@@ -5426,8 +5910,10 @@ function GuruWali7KaihModule() {
 function WakaKesiswaan7KaihModule() {
   const [kelas, setKelas] = useState("");
   const [data, setData] = useState([]);
+  const [daftarSiswa, setDaftarSiswa] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState("tabel");
   async function load() {
     setLoading(true);
     setError("");
@@ -5443,11 +5929,20 @@ function WakaKesiswaan7KaihModule() {
   }
   useEffect(() => {
     load();
+    apiCall("getDaftarSiswaUntukPortofolio", {}).then(setDaftarSiswa).catch(() => {});
   }, []);
   const namaFile = "Jurnal_7KAIH_Semua_Siswa" + (kelas ? "_" + kelas : "") + ".xlsx";
   return /*#__PURE__*/React.createElement("div", {
     className: "space-y-4"
-  }, /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 flex-wrap no-print"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "tabel" ? "primary" : "outline",
+    onClick: () => setTab("tabel")
+  }, "📋 Tabel"), /*#__PURE__*/React.createElement(Button, {
+    variant: tab === "cetak" ? "primary" : "outline",
+    onClick: () => setTab("cetak")
+  }, "🖨️ Cetak Bulanan per Kegiatan")), tab === "tabel" && /*#__PURE__*/React.createElement(Card, {
     title: "Jurnal 7KAIH Semua Siswa",
     actions: /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-2 no-print"
@@ -5474,7 +5969,9 @@ function WakaKesiswaan7KaihModule() {
   }, "Kelas: ", kelas), /*#__PURE__*/React.createElement(TabelJurnal7KaihLengkap, {
     data: data,
     showKelas: true
-  }))), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
+  }))), tab === "cetak" && /*#__PURE__*/React.createElement(Cetak7KaihBulananPanel, {
+    daftarSiswa: daftarSiswa
+  }), /*#__PURE__*/React.createElement(DokumenSekolahCard, {
     roles: ["Pengawas Sekolah"]
   }));
 }

@@ -159,7 +159,7 @@ const SHEET_SCHEMAS = {
   ],
   Jurnal_Bimbingan: [
     "ID", "ID_Guru", "Nama_Guru", "NIP_Guru", "ID_Siswa", "Nama_Siswa", "Tanggal",
-    "Aspek_Layanan", "Kegiatan", "CreatedAt"
+    "Aspek_Layanan", "Kegiatan", "Foto_URL", "CreatedAt"
   ],
   Jurnal_7KAIH: [
     "ID", "ID_Siswa", "Nama_Siswa", "Tanggal",
@@ -171,6 +171,7 @@ const SHEET_SCHEMAS = {
     "Makan_Siang_Menu", "Makan_Siang_Jam",
     "Makan_Malam_Menu", "Makan_Malam_Jam",
     "Belajar_Kegiatan", "Bermasyarakat_Kegiatan", "Tidur_Jam",
+    "Status_Verifikasi", "ID_Guru_Verifikasi", "Nama_Guru_Verifikasi", "Tanggal_Verifikasi",
     "CreatedAt"
   ],
   QR_Sessions: [
@@ -268,8 +269,27 @@ function setupDatabase() {
   // Sheets sebagai tanggal (mis. guru mengetik "4/7" untuk Jam Ke lalu
   // otomatis berubah jadi tanggal 4 Juli). Paksa kolom ini selalu berformat
   // teks murni supaya nilai apa pun yang diketik tersimpan apa adanya.
+  // PENTING: kolom berisi JAM (HH:mm:ss) atau kode singkat seperti "1-2" WAJIB
+  // dipaksa format Teks (Plain Text) SEBELUM data ditulis. Kalau tidak, Google
+  // Sheets otomatis mengira nilainya tanggal/waktu dan mengonversinya diam-diam -
+  // misalnya jam "07:15:00" bisa berubah jadi tanggal aneh (mis. "30/12", karena
+  // 30 Desember 1899 adalah "tanggal nol" bawaan Google Sheets untuk nilai jam
+  // tanpa tanggal). Ini hanya melindungi data BARU; data lama yang sudah terlanjur
+  // rusak diperbaiki lewat fungsi perbaikiKolomJamYangRusak() di bawah.
   const KOLOM_PAKSA_TEKS = {
-    Jurnal_Mengajar: ["Jam_Ke", "Pertemuan_Ke"]
+    Jurnal_Mengajar: ["Jam_Ke", "Pertemuan_Ke"],
+    Absen_Guru: ["Jam_Masuk", "Jam_Pulang"],
+    Absen_Siswa_Reguler: ["Jam"],
+    Jurnal_Absen_PKL_XII: ["Jam"],
+    QR_Sessions: ["Jam"],
+    Absen_Harian_Siswa: ["Jam_Masuk", "Jam_Pulang"],
+    Absen_Perpustakaan: ["Jam"],
+    Absen_Literasi_Quran: ["Jam"],
+    Kehadiran_Mengajar_Guru: ["Jam_Ke"],
+    Jurnal_7KAIH: [
+      "Bangun_Pagi_Jam", "Shalat_Subuh_Jam", "Shalat_Dzuhur_Jam", "Shalat_Ashar_Jam",
+      "Shalat_Maghrib_Jam", "Shalat_Isya_Jam", "Makan_Pagi_Jam", "Makan_Siang_Jam", "Makan_Malam_Jam", "Tidur_Jam"
+    ]
   };
   Object.keys(KOLOM_PAKSA_TEKS).forEach(function (sheetName) {
     const sheet = ss.getSheetByName(sheetName);
@@ -407,7 +427,14 @@ function doPost(e) {
     getNilaiPenilaian: apiGetNilaiPenilaian,
     saveNilaiSiswaBulk: apiSaveNilaiSiswaBulk,
     getRekapNilaiMapel: apiGetRekapNilaiMapel,
-    getNilaiSiswaSendiri: apiGetNilaiSiswaSendiri
+    getNilaiSiswaSendiri: apiGetNilaiSiswaSendiri,
+
+    getJurnal7KaihMenungguVerifikasi: apiGetJurnal7KaihMenungguVerifikasi,
+    verifikasiJurnal7Kaih: apiVerifikasiJurnal7Kaih,
+    getJurnal7KaihBulanan: apiGetJurnal7KaihBulanan,
+
+    getDaftarSiswaUntukPortofolio: apiGetDaftarSiswaUntukPortofolio,
+    getPortofolioSiswa: apiGetPortofolioSiswa
   };
 
   const handler = routes[action];
@@ -1219,6 +1246,12 @@ function apiSaveJurnal7Kaih(payload) {
   obj.Tanggal = today;
   obj.Olahraga_Kegiatan_JSON = JSON.stringify(payload.Olahraga_Kegiatan || []);
   delete obj.Olahraga_Kegiatan;
+  // Setiap kali siswa mengisi/mengubah jurnal harian, status verifikasi selalu
+  // (kembali) "Menunggu" - baru dianggap SAH setelah Guru Wali memverifikasi.
+  obj.Status_Verifikasi = "Menunggu";
+  obj.ID_Guru_Verifikasi = "";
+  obj.Nama_Guru_Verifikasi = "";
+  obj.Tanggal_Verifikasi = "";
 
   if (already) {
     obj.ID = already.ID;
@@ -1229,6 +1262,83 @@ function apiSaveJurnal7Kaih(payload) {
     appendRowFromObject(SHEET_NAMES.JURNAL_7KAIH, obj);
   }
   return obj;
+}
+
+// payload: { ID_Guru } -> daftar entri Jurnal 7KAIH milik siswa bimbingan guru wali
+// tsb yang BELUM diverifikasi ("Menunggu"), untuk ditindaklanjuti.
+function apiGetJurnal7KaihMenungguVerifikasi(payload) {
+  const users = readSheetAsObjects(SHEET_NAMES.USERS);
+  const guru = users.find(function (u) { return u.ID === payload.ID_Guru; });
+  if (!guru) throw new Error("Data guru tidak ditemukan.");
+  const siswaBimbingan = users.filter(function (u) {
+    return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Guru_Wali_Nama === guru.Nama;
+  });
+  const siswaMap = {};
+  siswaBimbingan.forEach(function (s) { siswaMap[s.ID] = s; });
+
+  return readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH)
+    .filter(function (r) { return siswaMap[r.ID_Siswa] && (r.Status_Verifikasi || "Menunggu") === "Menunggu"; })
+    .map(function (r) { r.Kelas = siswaMap[r.ID_Siswa].Kelas_Diampu; return r; })
+    .sort(function (a, b) { return new Date(a.Tanggal) - new Date(b.Tanggal); });
+}
+
+// payload: { ID (baris Jurnal_7KAIH), ID_Guru, Nama_Guru } -> Guru Wali mengesahkan
+// satu entri jurnal 7KAIH harian siswa bimbingannya sebagai SAH/Terverifikasi.
+function apiVerifikasiJurnal7Kaih(payload) {
+  updateRowByField(SHEET_NAMES.JURNAL_7KAIH, "ID", payload.ID, {
+    Status_Verifikasi: "Terverifikasi",
+    ID_Guru_Verifikasi: payload.ID_Guru,
+    Nama_Guru_Verifikasi: payload.Nama_Guru,
+    Tanggal_Verifikasi: formatDateOnly(new Date())
+  });
+  return { status: "Jurnal 7KAIH tanggal tsb sudah diverifikasi/sah." };
+}
+
+// payload: { ID_Siswa, Bulan (1-12), Tahun } -> data 7KAIH satu siswa untuk SATU
+// BULAN, sudah disusun per-tanggal (1..akhir bulan) supaya siap dicetak sebagai
+// rekap bulanan (satu lembar per kegiatan/kebiasaan). Tanggal yang belum diisi
+// siswa tetap muncul barisnya (kosong), sama seperti rekap absensi.
+function apiGetJurnal7KaihBulanan(payload) {
+  const bulan = Number(payload.Bulan);
+  const tahun = Number(payload.Tahun);
+  const jumlahHari = new Date(tahun, bulan, 0).getDate();
+  const rows = readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH).filter(function (r) {
+    if (r.ID_Siswa !== payload.ID_Siswa) return false;
+    const d = new Date(r.Tanggal);
+    return (d.getMonth() + 1) === bulan && d.getFullYear() === tahun;
+  });
+  const perTanggal = {};
+  rows.forEach(function (r) {
+    perTanggal[formatDateOnly(r.Tanggal)] = r;
+  });
+
+  const hasil = [];
+  for (let d = 1; d <= jumlahHari; d++) {
+    const tgl = Utilities.formatDate(new Date(tahun, bulan - 1, d), CONFIG.TIMEZONE, "yyyy-MM-dd");
+    const r = perTanggal[tgl];
+    hasil.push({
+      Tanggal: tgl,
+      Ada_Data: !!r,
+      Status_Verifikasi: r ? (r.Status_Verifikasi || "Menunggu") : "",
+      Bangun_Pagi_Jam: r ? r.Bangun_Pagi_Jam : "",
+      Shalat_Subuh_Jam: r ? r.Shalat_Subuh_Jam : "",
+      Shalat_Dzuhur_Jam: r ? r.Shalat_Dzuhur_Jam : "",
+      Shalat_Ashar_Jam: r ? r.Shalat_Ashar_Jam : "",
+      Shalat_Maghrib_Jam: r ? r.Shalat_Maghrib_Jam : "",
+      Shalat_Isya_Jam: r ? r.Shalat_Isya_Jam : "",
+      Olahraga_Kegiatan: r ? safeParseJson(r.Olahraga_Kegiatan_JSON).join(", ") : "",
+      Makan_Pagi_Menu: r ? r.Makan_Pagi_Menu : "",
+      Makan_Pagi_Jam: r ? r.Makan_Pagi_Jam : "",
+      Makan_Siang_Menu: r ? r.Makan_Siang_Menu : "",
+      Makan_Siang_Jam: r ? r.Makan_Siang_Jam : "",
+      Makan_Malam_Menu: r ? r.Makan_Malam_Menu : "",
+      Makan_Malam_Jam: r ? r.Makan_Malam_Jam : "",
+      Belajar_Kegiatan: r ? r.Belajar_Kegiatan : "",
+      Bermasyarakat_Kegiatan: r ? r.Bermasyarakat_Kegiatan : "",
+      Tidur_Jam: r ? r.Tidur_Jam : ""
+    });
+  }
+  return hasil;
 }
 
 function apiGetJurnal7KaihBySiswa(payload) {
@@ -1266,6 +1376,10 @@ function apiSaveJurnalBimbingan(payload) {
   obj.Nama_Siswa = siswa.Nama;
   obj.NIP_Guru = guru.Identitas_NIP_NISN;
   obj.CreatedAt = new Date();
+  if (payload.Foto_Base64) {
+    obj.Foto_URL = apiUploadPhoto({ base64Data: payload.Foto_Base64, fileName: "bimbingan_" + payload.ID_Siswa + "_" + formatDateOnly(new Date()) + ".jpg" }).url;
+  }
+  delete obj.Foto_Base64;
   appendRowFromObject(SHEET_NAMES.JURNAL_BIMBINGAN, obj);
   return obj;
 }
@@ -1926,6 +2040,63 @@ function setupTriggerCekAbsen() {
   });
   ScriptApp.newTrigger("cekSiswaBelumAbsenPagi").timeBased().everyDays(1).atHour(10).nearMinute(0).create();
   return "Trigger terpasang: cekSiswaBelumAbsenPagi akan berjalan otomatis setiap hari sekitar pukul 10:00.";
+}
+
+// Jalankan fungsi ini SEKALI SAJA secara manual dari editor Apps Script kalau
+// menemukan kolom jam yang tampil aneh (mis. "30/12" alih-alih "07:15:00").
+// Fungsi ini memindai kolom-kolom JAM di semua sheet terkait, dan kalau nilainya
+// ternyata sudah terlanjur menjadi tanggal/waktu asli (bukan teks) akibat auto-
+// konversi Google Sheets, nilainya dikembalikan ke format teks "HH:mm:ss" yang
+// benar. Aman dijalankan berkali-kali (data yang sudah benar tidak diubah).
+function perbaikiKolomJamYangRusak() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const KOLOM_JAM = {
+    Absen_Guru: ["Jam_Masuk", "Jam_Pulang"],
+    Absen_Siswa_Reguler: ["Jam"],
+    Jurnal_Absen_PKL_XII: ["Jam"],
+    QR_Sessions: ["Jam"],
+    Absen_Harian_Siswa: ["Jam_Masuk", "Jam_Pulang"],
+    Absen_Perpustakaan: ["Jam"],
+    Absen_Literasi_Quran: ["Jam"],
+    Jurnal_7KAIH: [
+      "Bangun_Pagi_Jam", "Shalat_Subuh_Jam", "Shalat_Dzuhur_Jam", "Shalat_Ashar_Jam",
+      "Shalat_Maghrib_Jam", "Shalat_Isya_Jam", "Makan_Pagi_Jam", "Makan_Siang_Jam", "Makan_Malam_Jam", "Tidur_Jam"
+    ]
+  };
+  let jumlahDiperbaiki = 0;
+  Object.keys(KOLOM_JAM).forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 2) return;
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    // Pastikan format kolom ke depan aman (Plain Text) dulu
+    KOLOM_JAM[sheetName].forEach(function (kolom) {
+      const colIndex = headers.indexOf(kolom);
+      if (colIndex === -1) return;
+      sheet.getRange(1, colIndex + 1, Math.max(sheet.getMaxRows(), 1000), 1).setNumberFormat("@");
+    });
+    // Perbaiki nilai baris yang SUDAH terlanjur berupa Date/waktu asli
+    KOLOM_JAM[sheetName].forEach(function (kolom) {
+      const colIndex = headers.indexOf(kolom);
+      if (colIndex === -1) return;
+      const range = sheet.getRange(2, colIndex + 1, lastRow - 1, 1);
+      const values = range.getValues();
+      let berubah = false;
+      const hasil = values.map(function (row) {
+        const v = row[0];
+        if (v instanceof Date) {
+          berubah = true;
+          jumlahDiperbaiki++;
+          return [Utilities.formatDate(v, CONFIG.TIMEZONE, "HH:mm:ss")];
+        }
+        return [v];
+      });
+      if (berubah) range.setValues(hasil);
+    });
+  });
+  return "Selesai. " + jumlahDiperbaiki + " sel jam yang rusak sudah diperbaiki kembali ke format HH:mm:ss.";
 }
 
 // ============================================================================
@@ -2610,6 +2781,98 @@ function apiGetNilaiSiswaSendiri(payload) {
   }).filter(Boolean).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
 }
 
+// ============================================================================
+// MODUL WAKA KURIKULUM: PORTOFOLIO SISWA (rekam jejak lengkap, per-siswa)
+// Mengumpulkan semua riwayat yang berkaitan dengan seorang siswa dari berbagai
+// sheet (7KAIH, Bimbingan, PKL, Kehadiran, Poin Pelanggaran, Nilai) dalam satu
+// tempat. Semua data diambil berdasarkan ID_Siswa (bukan Kelas_Diampu saat ini),
+// jadi riwayatnya tetap utuh walau siswa sudah naik kelas atau kelasnya berganti.
+// ============================================================================
+
+// Daftar semua siswa (untuk dropdown pencarian nama di menu Portofolio Siswa)
+function apiGetDaftarSiswaUntukPortofolio() {
+  return readSheetAsObjects(SHEET_NAMES.USERS)
+    .filter(function (u) { return parseRoles(u.Role_List).indexOf("Siswa") !== -1; })
+    .map(function (u) { return { ID: u.ID, Nama: u.Nama, Kelas: u.Kelas_Diampu, NISN: u.Identitas_NIP_NISN }; })
+    .sort(function (a, b) { return String(a.Nama).localeCompare(String(b.Nama)); });
+}
+
+// payload: { ID_Siswa } -> seluruh rekam jejak siswa tsb
+function apiGetPortofolioSiswa(payload) {
+  const siswa = readSheetAsObjects(SHEET_NAMES.USERS).find(function (u) { return u.ID === payload.ID_Siswa; });
+  if (!siswa) throw new Error("Data siswa tidak ditemukan.");
+
+  const riwayat7Kaih = readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .map(function (r) { r.Olahraga_Kegiatan = safeParseJson(r.Olahraga_Kegiatan_JSON); return r; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const riwayatBimbingan = readSheetAsObjects(SHEET_NAMES.JURNAL_BIMBINGAN)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const riwayatPkl = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const riwayatPoin = readSheetAsObjects(SHEET_NAMES.POIN_PELANGGARAN)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const riwayatTindakLanjut = readSheetAsObjects(SHEET_NAMES.TINDAK_LANJUT_SISWA)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const riwayatNilai = readSheetAsObjects(SHEET_NAMES.NILAI_SISWA)
+    .filter(function (n) { return n.ID_Siswa === payload.ID_Siswa; });
+  const semuaPenilaian = readSheetAsObjects(SHEET_NAMES.PENILAIAN_MASTER);
+  const riwayatNilaiLengkap = riwayatNilai.map(function (n) {
+    const p = semuaPenilaian.find(function (x) { return x.ID === n.ID_Penilaian; });
+    if (!p) return null;
+    return { Mapel: p.Mapel, Jenis: p.Jenis, Judul: p.Judul, Tanggal: p.Tanggal, Jenis_Nilai: p.Jenis_Nilai || "Angka", Nilai: n.Nilai, KKTP: p.KKTP };
+  }).filter(Boolean).sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+
+  const absenGerbang = readSheetAsObjects(SHEET_NAMES.ABSEN_HARIAN_SISWA)
+    .filter(function (r) { return r.ID_Siswa === payload.ID_Siswa; })
+    .sort(function (a, b) { return new Date(b.Tanggal) - new Date(a.Tanggal); });
+  const jumlahHadirGerbang = absenGerbang.filter(function (r) { return r.Jam_Masuk; }).length;
+
+  return {
+    Profil: {
+      ID: siswa.ID,
+      Nama: siswa.Nama,
+      NISN: siswa.Identitas_NIP_NISN,
+      Kelas_Sekarang: siswa.Kelas_Diampu,
+      Foto_URL: siswa.Foto_URL,
+      Tempat_Lahir: siswa.Tempat_Lahir,
+      Tanggal_Lahir: siswa.Tanggal_Lahir,
+      Alamat_Siswa: siswa.Alamat_Siswa,
+      Nama_Ayah: siswa.Nama_Ayah,
+      Nama_Ibu: siswa.Nama_Ibu,
+      No_HP_OrangTua: siswa.No_HP_OrangTua,
+      Guru_Wali_Nama: siswa.Guru_Wali_Nama,
+      Tempat_PKL: siswa.Tempat_PKL,
+      Guru_Pembimbing_PKL: siswa.Guru_Pembimbing_PKL
+    },
+    Ringkasan: {
+      Total_Poin_Pelanggaran: hitungTotalPoin(riwayatPoin),
+      Jumlah_Hadir_Gerbang: jumlahHadirGerbang,
+      Jumlah_Hari_Tercatat_Gerbang: absenGerbang.length,
+      Jumlah_7Kaih_Terisi: riwayat7Kaih.length,
+      Jumlah_7Kaih_Terverifikasi: riwayat7Kaih.filter(function (r) { return r.Status_Verifikasi === "Terverifikasi"; }).length,
+      Jumlah_Bimbingan: riwayatBimbingan.length,
+      Jumlah_Hadir_PKL: riwayatPkl.filter(function (r) { return r.Status === "Hadir"; }).length
+    },
+    Riwayat_7Kaih: riwayat7Kaih,
+    Riwayat_Bimbingan: riwayatBimbingan,
+    Riwayat_PKL: riwayatPkl,
+    Riwayat_Kehadiran: absenGerbang,
+    Riwayat_Poin_Pelanggaran: riwayatPoin,
+    Riwayat_Tindak_Lanjut: riwayatTindakLanjut,
+    Riwayat_Nilai: riwayatNilaiLengkap
+  };
+}
+
 function apiGetDashboardManajemen(payload) {
   const today = formatDateOnly(new Date());
 
@@ -2618,13 +2881,28 @@ function apiGetDashboardManajemen(payload) {
   // Kehadiran siswa reguler pada dashboard eksekutif memakai scan gerbang (Absen_Harian_Siswa),
   // BUKAN checklist guru mapel, supaya konsisten dengan definisi "kehadiran ke sekolah".
   const absenSiswaGerbang = readSheetAsObjects(SHEET_NAMES.ABSEN_HARIAN_SISWA).filter(function (r) { return formatDateOnly(r.Tanggal) === today && r.Jam_Masuk; });
-  const absenPkl = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).filter(function (r) { return formatDateOnly(r.Tanggal) === today; });
   const jurnal7kaih = readSheetAsObjects(SHEET_NAMES.JURNAL_7KAIH).filter(function (r) { return formatDateOnly(r.Tanggal) === today; });
 
   const users = readSheetAsObjects(SHEET_NAMES.USERS);
   const totalGuru = users.filter(function (u) { return parseRoles(u.Role_List).some(function (r) { return r.toLowerCase().indexOf("guru") !== -1; }); }).length;
   const totalSiswaReguler = users.filter(function (u) { return parseRoles(u.Role_List).indexOf("Siswa") !== -1 && u.Kelas_Diampu && u.Kelas_Diampu.indexOf("XII") === -1; }).length;
-  const totalSiswaPkl = users.filter(function (u) { return u.Kelas_Diampu && String(u.Kelas_Diampu).indexOf("XII") !== -1; }).length;
+  // "Sedang PKL" BUKAN sekadar kelas XII - harus benar-benar sudah ditugaskan
+  // (Tempat_PKL terisi) DAN tanggal hari ini berada dalam rentang Tanggal_Mulai_PKL
+  // s.d. Tanggal_Selesai_PKL (kalau tanggalnya diisi Admin). Ini supaya siswa XII
+  // yang belum/sudah selesai PKL tidak ikut dihitung sebagai "sedang PKL".
+  const nowDate = new Date();
+  const siswaPklAktif = users.filter(function (u) {
+    if (parseRoles(u.Role_List).indexOf("Siswa") === -1) return false;
+    if (!u.Kelas_Diampu || String(u.Kelas_Diampu).indexOf("XII") === -1) return false;
+    if (!u.Tempat_PKL) return false;
+    if (u.Tanggal_Mulai_PKL && nowDate < new Date(u.Tanggal_Mulai_PKL)) return false;
+    if (u.Tanggal_Selesai_PKL && nowDate > new Date(u.Tanggal_Selesai_PKL)) return false;
+    return true;
+  });
+  const totalSiswaPkl = siswaPklAktif.length;
+  const idSiswaPklAktif = {};
+  siswaPklAktif.forEach(function (s) { idSiswaPklAktif[s.ID] = true; });
+  const absenPkl = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL).filter(function (r) { return formatDateOnly(r.Tanggal) === today && idSiswaPklAktif[r.ID_Siswa]; });
 
   // Siswa reguler unik yang sudah scan masuk di gerbang hari ini
   const siswaHadirMap = {};
