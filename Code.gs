@@ -225,7 +225,7 @@ const SHEET_SCHEMAS = {
   // tertentu, mengacu ke satu/lebih Tujuan Pembelajaran.
   Penilaian_Master: [
     "ID", "Jenis", "Kelas", "Mapel", "ID_Guru", "Nama_Guru", "Tanggal", "Judul",
-    "TP_Terkait_JSON", "Jenis_Nilai", "KKTP", "Semester", "Tahun_Ajaran", "CreatedAt"
+    "TP_Terkait_JSON", "Jenis_Nilai", "Daftar_Kriteria_JSON", "KKTP", "Semester", "Tahun_Ajaran", "CreatedAt"
   ],
   // Nilai per siswa untuk satu Penilaian_Master (ID_Penilaian)
   Nilai_Siswa: [
@@ -363,6 +363,7 @@ function doPost(e) {
     absenPkl: apiAbsenPkl,
     getJurnalPklMonitoring: apiGetJurnalPklMonitoring,
     getRekapKehadiranPkl: apiGetRekapKehadiranPkl,
+    getRekapAbsensiPklBulanan: apiGetRekapAbsensiPklBulanan,
     getDokumenSekolah: apiGetDokumenSekolah,
     saveDokumenSekolah: apiSaveDokumenSekolah,
     deleteDokumenSekolah: apiDeleteDokumenSekolah,
@@ -1231,6 +1232,61 @@ function apiGetRekapKehadiranPkl(payload) {
 
   rows.sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama_Siswa.localeCompare(b.Nama_Siswa); });
   return { namaGuruPembimbing: scope.namaGuruPembimbing, data: rows };
+}
+
+// payload: { bulan, tahun, ID_Guru (opsional), Kompetensi (opsional) } -> rekap
+// kehadiran PKL dalam bentuk GRID BULANAN (kolom tanggal 1..akhir bulan, isi IN/X),
+// format yang sama seperti rekap absensi harian reguler - supaya mudah dibandingkan.
+function apiGetRekapAbsensiPklBulanan(payload) {
+  const bulan = Number(payload.bulan);
+  const tahun = Number(payload.tahun);
+  const jumlahHari = getJumlahHariDalamBulan(bulan, tahun);
+  const liburList = apiGetHariLibur({ bulan: bulan, tahun: tahun }).map(function (l) { return formatDateOnly(l.Tanggal); });
+  const scope = resolveSiswaPklScope(payload || {});
+  const semuaJurnal = readSheetAsObjects(SHEET_NAMES.JURNAL_ABSEN_PKL);
+
+  const hariEfektif = [];
+  for (let d = 1; d <= jumlahHari; d++) {
+    const tgl = new Date(tahun, bulan - 1, d);
+    if (!isHariLibur(tgl, liburList)) hariEfektif.push(d);
+  }
+
+  const rows = scope.siswaXII.map(function (siswa) {
+    const recAll = semuaJurnal.filter(function (r) { return r.ID_Siswa === siswa.ID; });
+    const hadirSet = {};
+    recAll.forEach(function (r) {
+      const d = new Date(r.Tanggal);
+      if ((d.getMonth() + 1) === bulan && d.getFullYear() === tahun && r.Status === "Hadir") {
+        hadirSet[d.getDate()] = true;
+      }
+    });
+    const harian = [];
+    let jumlahHadir = 0;
+    for (let d = 1; d <= jumlahHari; d++) {
+      const tgl = new Date(tahun, bulan - 1, d);
+      const libur = isHariLibur(tgl, liburList);
+      let status;
+      if (libur) { status = "LIBUR"; }
+      else if (hadirSet[d]) { status = "IN"; jumlahHadir++; }
+      else { status = "X"; }
+      harian.push({ tanggal: d, status: status });
+    }
+    const persentase = hariEfektif.length ? Math.round((jumlahHadir / hariEfektif.length) * 100) : 0;
+    return {
+      ID: siswa.ID,
+      Nama: siswa.Nama,
+      NISN: siswa.Identitas_NIP_NISN,
+      Kelas: siswa.Kelas_Diampu,
+      Tempat_PKL: siswa.Tempat_PKL,
+      Harian: harian,
+      Hari_Efektif: hariEfektif.length,
+      Jumlah_Hadir: jumlahHadir,
+      Persentase: persentase
+    };
+  });
+
+  rows.sort(function (a, b) { return (a.Kelas || "").localeCompare(b.Kelas || "") || a.Nama.localeCompare(b.Nama); });
+  return { bulan: bulan, tahun: tahun, jumlahHariDalamBulan: jumlahHari, hariEfektif: hariEfektif.length, namaGuruPembimbing: scope.namaGuruPembimbing, data: rows };
 }
 
 // ============================================================================
@@ -2622,25 +2678,36 @@ function apiGetTujuanPembelajaranDariJurnal(payload) {
     .sort(function (a, b) { return new Date(b.Tanggal_Terakhir) - new Date(a.Tanggal_Terakhir); });
 }
 
-// 4 tingkat kriteria kualitatif (dipakai sebagai alternatif nilai angka), sesuai
-// urutan capaian dari yang paling rendah ke paling tinggi.
-const KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
-function ordinalKriteria(label) {
-  return KRITERIA_PENILAIAN.indexOf(String(label || "").trim());
+// Kriteria kualitatif kini DITENTUKAN SENDIRI oleh guru per kegiatan penilaian
+// (bukan daftar tetap) - disimpan di Daftar_Kriteria_JSON pada Penilaian_Master,
+// terurut dari capaian PALING RENDAH ke PALING TINGGI (urutan ini yang dipakai
+// untuk membandingkan KKTP/ketuntasan). DEFAULT_KRITERIA hanya dipakai sebagai
+// isian awal form di frontend supaya guru tidak mulai dari kosong.
+const DEFAULT_KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
+function ordinalKriteria(label, daftarKriteria) {
+  return (daftarKriteria || DEFAULT_KRITERIA_PENILAIAN).indexOf(String(label || "").trim());
 }
 
 // payload: { Jenis ("Harian"/"Tengah Semester"), Kelas, Mapel, ID_Guru, Nama_Guru,
 // Tanggal, Judul, TP_Terkait (array teks Tujuan Pembelajaran, bisa lebih dari satu),
-// Jenis_Nilai ("Angka"/"Kriteria"), KKTP (angka jika Jenis_Nilai=Angka, salah satu
-// KRITERIA_PENILAIAN jika Jenis_Nilai=Kriteria), Semester, Tahun_Ajaran }
+// Jenis_Nilai ("Angka"/"Kriteria"), Daftar_Kriteria (array teks kriteria kustom guru,
+// terurut rendah->tinggi, wajib diisi kalau Jenis_Nilai=Kriteria), KKTP (angka jika
+// Jenis_Nilai=Angka, salah satu isi Daftar_Kriteria jika Jenis_Nilai=Kriteria),
+// Semester, Tahun_Ajaran }
 function apiSavePenilaian(payload) {
   if (["Harian", "Tengah Semester"].indexOf(payload.Jenis) === -1) {
     throw new Error("Jenis penilaian harus 'Harian' atau 'Tengah Semester'.");
   }
   const jenisNilai = payload.Jenis_Nilai === "Kriteria" ? "Kriteria" : "Angka";
-  const kktp = jenisNilai === "Kriteria"
-    ? (KRITERIA_PENILAIAN.indexOf(payload.KKTP) !== -1 ? payload.KKTP : "Cakap")
-    : (payload.KKTP || 70);
+  let daftarKriteria = [];
+  let kktp = payload.KKTP || 70;
+  if (jenisNilai === "Kriteria") {
+    daftarKriteria = (payload.Daftar_Kriteria || []).map(function (s) { return String(s).trim(); }).filter(Boolean);
+    if (daftarKriteria.length < 2) {
+      throw new Error("Isi minimal 2 kriteria (urut dari yang paling rendah ke paling tinggi).");
+    }
+    kktp = daftarKriteria.indexOf(payload.KKTP) !== -1 ? payload.KKTP : daftarKriteria[daftarKriteria.length - 1];
+  }
   const obj = {
     ID: generateId("PNL"),
     Jenis: payload.Jenis,
@@ -2652,6 +2719,7 @@ function apiSavePenilaian(payload) {
     Judul: payload.Judul,
     TP_Terkait_JSON: JSON.stringify(payload.TP_Terkait || []),
     Jenis_Nilai: jenisNilai,
+    Daftar_Kriteria_JSON: JSON.stringify(daftarKriteria),
     KKTP: kktp,
     Semester: payload.Semester,
     Tahun_Ajaran: payload.Tahun_Ajaran,
@@ -2680,6 +2748,7 @@ function apiGetPenilaianList(payload) {
       Judul: p.Judul,
       TP_Terkait: safeParseJson(p.TP_Terkait_JSON),
       Jenis_Nilai: p.Jenis_Nilai || "Angka",
+      Daftar_Kriteria: safeParseJson(p.Daftar_Kriteria_JSON),
       KKTP: p.KKTP,
       Semester: p.Semester,
       Tahun_Ajaran: p.Tahun_Ajaran,
@@ -2771,8 +2840,9 @@ function apiGetNilaiSiswaSendiri(payload) {
     const p = semuaPenilaian.find(function (x) { return x.ID === n.ID_Penilaian; });
     if (!p) return null;
     const jenisNilai = p.Jenis_Nilai || "Angka";
+    const daftarKriteria = safeParseJson(p.Daftar_Kriteria_JSON);
     const tuntas = jenisNilai === "Kriteria"
-      ? ordinalKriteria(n.Nilai) >= ordinalKriteria(p.KKTP)
+      ? ordinalKriteria(n.Nilai, daftarKriteria) >= ordinalKriteria(p.KKTP, daftarKriteria)
       : Number(n.Nilai) >= Number(p.KKTP);
     return {
       Mapel: p.Mapel, Jenis: p.Jenis, Judul: p.Judul, Tanggal: p.Tanggal,

@@ -47,6 +47,7 @@
 <!-- Library scan QR Code (kamera) & generator QR Code (kartu QR pribadi siswa), versi dikunci -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
 
 <!-- Library ekspor Excel (dipakai untuk unduh rekap absensi guru & siswa dalam format .xlsx) -->
@@ -1242,8 +1243,8 @@ function AppShell() {
   }, "← Kembali"), /*#__PURE__*/React.createElement(FotoOrang, {
     nama: user.Nama,
     fotoUrlDrive: user.Foto_URL,
-    className: "w-10 h-10 rounded-full border border-white/30 shrink-0 hidden sm:flex",
-    iconClassName: "text-lg"
+    className: "w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/30 shrink-0 flex",
+    iconClassName: "text-base sm:text-lg"
   }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     className: "text-sm text-primary-100 hidden sm:block"
   }, "Selamat datang,"), /*#__PURE__*/React.createElement("p", {
@@ -2077,7 +2078,7 @@ function tahunAjaranBerjalan() {
 // FormBuatPenilaian di bawah), supaya datanya selalu sama/sinkron dengan jurnal.
 
 // Form membuat kegiatan Penilaian baru (Harian / Tengah Semester)
-const KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
+const DEFAULT_KRITERIA_PENILAIAN = ["Belum Berkembang", "Layak", "Cakap", "Mahir"];
 
 function FormBuatPenilaian({
   kelas,
@@ -2094,6 +2095,7 @@ function FormBuatPenilaian({
   const [tanggal, setTanggal] = useState(todayStr());
   const [jenisNilai, setJenisNilai] = useState("Angka");
   const [kktp, setKktp] = useState(70);
+  const [daftarKriteria, setDaftarKriteria] = useState(DEFAULT_KRITERIA_PENILAIAN);
   const [semester, setSemester] = useState(semesterBerjalan());
   const [tpTerpilih, setTpTerpilih] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2103,7 +2105,19 @@ function FormBuatPenilaian({
   }
   function ubahJenisNilai(v) {
     setJenisNilai(v);
-    setKktp(v === "Kriteria" ? "Cakap" : 70);
+    setKktp(v === "Kriteria" ? daftarKriteria[daftarKriteria.length - 1] : 70);
+  }
+  function ubahTeksKriteria(i, teks) {
+    const next = daftarKriteria.map((k, idx) => idx === i ? teks : k);
+    setDaftarKriteria(next);
+  }
+  function tambahKriteria() {
+    setDaftarKriteria([...daftarKriteria, ""]);
+  }
+  function hapusKriteria(i) {
+    const next = daftarKriteria.filter((_, idx) => idx !== i);
+    setDaftarKriteria(next);
+    if (kktp === daftarKriteria[i]) setKktp(next[next.length - 1] || "");
   }
   async function simpan(e) {
     e.preventDefault();
@@ -2120,6 +2134,7 @@ function FormBuatPenilaian({
         Judul: judul,
         TP_Terkait: tpTerpilih,
         Jenis_Nilai: jenisNilai,
+        Daftar_Kriteria: jenisNilai === "Kriteria" ? daftarKriteria.map(k => k.trim()).filter(Boolean) : [],
         KKTP: kktp,
         Semester: semester,
         Tahun_Ajaran: tahunAjaranBerjalan()
@@ -2149,9 +2164,7 @@ function FormBuatPenilaian({
     type: "date",
     value: tanggal,
     onChange: e => setTanggal(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "grid sm:grid-cols-2 gap-2"
-  }, /*#__PURE__*/React.createElement(Select, {
+  })), /*#__PURE__*/React.createElement(Select, {
     label: "Jenis Nilai",
     value: jenisNilai,
     onChange: e => ubahJenisNilai(e.target.value),
@@ -2161,14 +2174,34 @@ function FormBuatPenilaian({
     type: "number",
     value: kktp,
     onChange: e => setKktp(e.target.value)
-  }) : /*#__PURE__*/React.createElement(Select, {
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "border rounded-lg p-3 space-y-2 bg-gray-50"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-sm font-medium text-gray-600"
+  }, "Daftar Kriteria (urutkan dari capaian PALING RENDAH ke PALING TINGGI)"), daftarKriteria.map((k, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-gray-400 w-4"
+  }, i + 1), /*#__PURE__*/React.createElement("input", {
+    value: k,
+    onChange: e => ubahTeksKriteria(i, e.target.value),
+    placeholder: "cth: Cakap",
+    className: "flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm"
+  }), daftarKriteria.length > 2 && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => hapusKriteria(i),
+    className: "text-red-500 text-xs hover:underline shrink-0"
+  }, "Hapus"))), /*#__PURE__*/React.createElement(Button, {
+    type: "button",
+    variant: "outline",
+    onClick: tambahKriteria
+  }, "+ Tambah Kriteria"), /*#__PURE__*/React.createElement(Select, {
     label: "KKTP (Batas Minimal Tuntas)",
     value: kktp,
     onChange: e => setKktp(e.target.value),
-    options: KRITERIA_PENILAIAN
-  })), jenisNilai === "Kriteria" && /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-gray-400 -mt-1"
-  }, "Guru akan mengisi nilai siswa memakai 4 kriteria: ", KRITERIA_PENILAIAN.join(", "), "."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    options: daftarKriteria.filter(Boolean)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     className: "text-sm font-medium text-gray-600 mb-1"
   }, "Tujuan Pembelajaran Terkait (bisa pilih lebih dari satu)"), daftarTp.length === 0 ? /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-gray-400"
@@ -2239,8 +2272,9 @@ function IsiNilaiPenilaian({
       setLoading(false);
     }
   }
+  const daftarKriteriaPenilaian = penilaian.Daftar_Kriteria && penilaian.Daftar_Kriteria.length ? penilaian.Daftar_Kriteria : DEFAULT_KRITERIA_PENILAIAN;
   const belumTuntas = penilaian.Jenis_Nilai === "Kriteria"
-    ? n => n.Nilai !== null && KRITERIA_PENILAIAN.indexOf(n.Nilai) < KRITERIA_PENILAIAN.indexOf(penilaian.KKTP)
+    ? n => n.Nilai !== null && daftarKriteriaPenilaian.indexOf(n.Nilai) < daftarKriteriaPenilaian.indexOf(penilaian.KKTP)
     : n => n.Nilai !== null && n.Nilai < penilaian.KKTP;
   return /*#__PURE__*/React.createElement(Card, {
     title: "Isi Nilai - " + penilaian.Judul,
@@ -2264,7 +2298,7 @@ function IsiNilaiPenilaian({
     className: "w-40 border border-gray-300 rounded-lg px-2 py-1 text-sm text-center " + (belumTuntas(n) ? "border-red-300 bg-red-50" : "")
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "-"), KRITERIA_PENILAIAN.map(k => /*#__PURE__*/React.createElement("option", {
+  }, "-"), daftarKriteriaPenilaian.map(k => /*#__PURE__*/React.createElement("option", {
     key: k,
     value: k
   }, k))) : /*#__PURE__*/React.createElement("input", {
@@ -3892,17 +3926,23 @@ function DokumenSekolahCard({
   const [list, setList] = useState([]);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
+  const [halaman, setHalaman] = useState(1);
+  const PER_HALAMAN = 5;
   useEffect(() => {
     if (!roles.includes(activeRole)) return;
     apiCall("getDokumenSekolah", {}).then(setList).catch(e => setError(e.message));
   }, [activeRole]);
   if (!roles.includes(activeRole)) return null;
+  const totalHalaman = Math.max(1, Math.ceil(list.length / PER_HALAMAN));
+  const halamanAman = Math.min(halaman, totalHalaman);
+  const daftarHalamanIni = list.slice((halamanAman - 1) * PER_HALAMAN, halamanAman * PER_HALAMAN);
   return React.createElement(Card, {
     title: "Dokumen Sekolah",
-    subtitle: list.length + " dokumen tersedia"
+    subtitle: list.length + " dokumen tersedia",
+    className: "max-w-2xl"
   }, error && React.createElement(Alert, null, error), React.createElement("div", {
     className: "space-y-2"
-  }, list.map(d => React.createElement("div", {
+  }, daftarHalamanIni.map(d => React.createElement("div", {
     key: d.ID,
     className: "border rounded-lg p-3 flex justify-between items-center gap-2"
   }, React.createElement("div", {
@@ -3923,7 +3963,19 @@ function DokumenSekolahCard({
     className: "inline-flex items-center px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600 hover:bg-gray-50"
   }, "Unduh")))), list.length === 0 && React.createElement("p", {
     className: "text-center text-gray-400 py-4 text-sm"
-  }, "Belum ada dokumen sekolah yang diunggah Admin.")), React.createElement(Modal, {
+  }, "Belum ada dokumen sekolah yang diunggah Admin.")), totalHalaman > 1 && React.createElement("div", {
+    className: "flex items-center justify-between mt-3 pt-3 border-t"
+  }, React.createElement(Button, {
+    variant: "outline",
+    disabled: halamanAman <= 1,
+    onClick: () => setHalaman(h => Math.max(1, h - 1))
+  }, "← Sebelumnya"), React.createElement("span", {
+    className: "text-xs text-gray-400"
+  }, "Halaman ", halamanAman, " dari ", totalHalaman), React.createElement(Button, {
+    variant: "outline",
+    disabled: halamanAman >= totalHalaman,
+    onClick: () => setHalaman(h => Math.min(totalHalaman, h + 1))
+  }, "Selanjutnya →")), React.createElement(Modal, {
     open: !!preview,
     onClose: () => setPreview(null),
     title: preview ? preview.Judul : ""
@@ -6048,7 +6100,15 @@ function RekapKehadiranPerKelasModule() {
     className: "hidden print:block text-lg font-bold text-center mb-1"
   }, "REKAP KEHADIRAN SISWA PER KELAS - ", (data ? NAMA_BULAN[data.bulan - 1] + " " + data.tahun : "").toUpperCase()), React.createElement("p", {
     className: "hidden print:block text-center text-sm mb-4"
-  }, "SMK NEGERI 1 WOYLA"), React.createElement("div", {
+  }, "SMK NEGERI 1 WOYLA"), data && data.kelasList.length > 0 && React.createElement(Card, {
+    className: "no-print mb-4",
+    title: "Grafik Rata-rata Kehadiran per Kelas"
+  }, React.createElement(GrafikBar, {
+    label: "Rata-rata Kehadiran (%)",
+    labels: data.kelasList.map(k => k.Kelas),
+    data: data.kelasList.map(k => k.Rata_Rata_Persentase),
+    warnaPerBatang: data.kelasList.map(k => k.Rata_Rata_Persentase >= 90 ? "#16a34a" : k.Rata_Rata_Persentase >= 75 ? "#d97706" : "#dc2626")
+  })), React.createElement("div", {
     className: "space-y-3"
   }, data && data.kelasList.map(k => React.createElement("div", {
     key: k.Kelas,
@@ -6641,6 +6701,62 @@ function KakomliSiswaModule() {
    ============================================================================ */
 // Versi ringkas MyQrCode untuk ditempel langsung di dalam desain Kartu Pelajar /
 // Kartu Perpustakaan (tanpa bingkai kartu putih & teks instruksi tambahan).
+// Grafik batang sederhana (Chart.js) - dipakai untuk rekap kehadiran per kelas.
+// warnaPerBatang opsional: array warna per-batang; kalau tidak diisi pakai warna
+// tunggal bertema primer.
+function GrafikBar({
+  label,
+  labels,
+  data,
+  warnaPerBatang,
+  tinggi = 260
+}) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  useEffect(() => {
+    if (!canvasRef.current || !window.Chart) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new window.Chart(canvasRef.current, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: label,
+          data: data,
+          backgroundColor: warnaPerBatang || "#312e81",
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100
+          }
+        }
+      }
+    });
+    return () => {
+      if (chartRef.current) chartRef.current.destroy();
+    };
+  }, [JSON.stringify(labels), JSON.stringify(data)]);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "no-print",
+    style: {
+      height: tinggi
+    }
+  }, /*#__PURE__*/React.createElement("canvas", {
+    ref: canvasRef
+  }));
+}
+
 function InlineQrCode({
   idSiswa,
   size = 76
@@ -7490,6 +7606,127 @@ function ManajemenModule() {
 // filter = semua siswa PKL), dan Ketua Kompetensi Keahlian (filterPayload
 // berisi Kompetensi). Menampilkan isian jurnal harian & rekap kehadiran yang
 // bisa dicetak dalam bentuk tabel.
+// Rekap kehadiran PKL dalam bentuk GRID BULANAN (kolom tanggal 1..akhir bulan,
+// isi IN/X/LIBUR) - format yang sama dengan rekap absensi harian reguler.
+function PklRekapBulananPanel({
+  filterPayload
+}) {
+  const now = new Date();
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setData(await apiCall("getRekapAbsensiPklBulanan", {
+        ...filterPayload,
+        bulan,
+        tahun
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [bulan, tahun]);
+  function handleExportExcel() {
+    if (!data || data.data.length === 0) return;
+    const header = ["No", "Nama", "NISN", "Kelas"];
+    for (let i = 1; i <= data.jumlahHariDalamBulan; i++) header.push(String(i));
+    header.push("Hari Efektif", "Hadir", "Persentase (%)");
+    const rows = data.data.map((row, idx) => [idx + 1, row.Nama, row.NISN, row.Kelas, ...row.Harian.map(h => h.status === "LIBUR" ? "" : h.status === "IN" ? "In" : "X"), row.Hari_Efektif, row.Jumlah_Hadir, row.Persentase]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap PKL Bulanan");
+    XLSX.writeFile(wb, "Rekap_Kehadiran_PKL_Bulanan_" + NAMA_BULAN[bulan - 1] + "_" + tahun + ".xlsx");
+  }
+  return /*#__PURE__*/React.createElement(Card, {
+    title: "Rekap Kehadiran PKL Bulanan (Grid Harian)",
+    subtitle: data ? "Hari efektif: " + data.hariEfektif + " hari" : "",
+    actions: /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 no-print items-end"
+    }, /*#__PURE__*/React.createElement("select", {
+      value: bulan,
+      onChange: e => setBulan(Number(e.target.value)),
+      className: "border rounded-lg px-3 py-1.5 text-sm"
+    }, NAMA_BULAN.map((b, i) => /*#__PURE__*/React.createElement("option", {
+      key: b,
+      value: i + 1
+    }, b))), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: tahun,
+      onChange: e => setTahun(Number(e.target.value)),
+      className: "border rounded-lg px-3 py-1.5 text-sm w-24"
+    }), /*#__PURE__*/React.createElement(Button, {
+      onClick: load
+    }, loading ? /*#__PURE__*/React.createElement(Spinner, null) : "Tampilkan"), data && /*#__PURE__*/React.createElement(Button, {
+      variant: "outline",
+      onClick: handleExportExcel
+    }, "⬇️ Unduh Excel"), data && /*#__PURE__*/React.createElement(PrintButton, {
+      label: "Cetak",
+      landscape: true
+    }))
+  }, error && /*#__PURE__*/React.createElement(Alert, null, error), data && /*#__PURE__*/React.createElement("div", {
+    id: "print-area",
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "hidden print:block text-lg font-bold text-center mb-1"
+  }, "REKAP KEHADIRAN PKL BULANAN - ", NAMA_BULAN[bulan - 1].toUpperCase(), " ", tahun), /*#__PURE__*/React.createElement("p", {
+    className: "hidden print:block text-center text-sm mb-4"
+  }, "SMK NEGERI 1 WOYLA"), /*#__PURE__*/React.createElement("table", {
+    className: "text-xs border-collapse w-full"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    className: "bg-gray-50"
+  }, /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "No"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1 text-left"
+  }, "Nama"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "Kelas"), Array.from({
+    length: data.jumlahHariDalamBulan
+  }, (_, i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
+    className: "border px-1 py-1 w-6"
+  }, i + 1)), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "HE"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "Hadir"), /*#__PURE__*/React.createElement("th", {
+    className: "border px-2 py-1"
+  }, "%"))), /*#__PURE__*/React.createElement("tbody", null, data.data.map((row, idx) => /*#__PURE__*/React.createElement("tr", {
+    key: row.ID
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, idx + 1), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "font-medium"
+  }, row.Nama), /*#__PURE__*/React.createElement("p", {
+    className: "text-gray-400"
+  }, row.NISN)), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Kelas), row.Harian.map(h => /*#__PURE__*/React.createElement("td", {
+    key: h.tanggal,
+    className: classNames("border px-1 py-1 text-center", h.status === "LIBUR" && "bg-gray-100 text-gray-300", h.status === "X" && "text-red-500", h.status === "IN" && "text-emerald-600 font-medium")
+  }, h.status === "LIBUR" ? "" : h.status === "IN" ? "In" : "X")), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Hari_Efektif), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Jumlah_Hadir), /*#__PURE__*/React.createElement("td", {
+    className: "border px-2 py-1 text-center"
+  }, row.Persentase, "%"))), data.data.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: data.jumlahHariDalamBulan + 6,
+    className: "text-center text-gray-400 py-4"
+  }, "Tidak ada siswa PKL dalam cakupan ini."))))));
+}
+
 function PklMonitoringPanel({
   title,
   filterPayload
@@ -7581,7 +7818,9 @@ function PklMonitoringPanel({
     className: "overflow-x-auto max-h-96 overflow-y-auto"
   }, React.createElement("table", {
     className: "w-full text-sm"
-  }, React.createElement("thead", null, kolomJurnal), React.createElement("tbody", null, barisJurnal, barisJurnalKosong)))), React.createElement(Card, {
+  }, React.createElement("thead", null, kolomJurnal), React.createElement("tbody", null, barisJurnal, barisJurnalKosong)))), React.createElement(PklRekapBulananPanel, {
+    filterPayload: filterPayload
+  }), React.createElement(Card, {
     title: "Rekap Kehadiran PKL - " + title,
     actions: React.createElement("div", {
       className: "flex gap-2 no-print"
